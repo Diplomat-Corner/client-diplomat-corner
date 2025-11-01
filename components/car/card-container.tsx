@@ -16,6 +16,7 @@ import {
 import FilterSection, { FilterOption } from "../filter-section";
 import ListingBanner from "@/components/listing-banner";
 import { motion, AnimatePresence } from "framer-motion";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 
 interface CardContainerProps {
   advertisementType?: string;
@@ -62,6 +63,9 @@ const CardContainer: React.FC<CardContainerProps> = ({ advertisementType }) => {
   const [isSelectOpen, setIsSelectOpen] = useState(false);
   const selectRef = useRef<HTMLDivElement>(null);
   const [totalItems, setTotalItems] = useState(0);
+  const [activeTab, setActiveTab] = useState<"listings" | "your-listing">(
+    "listings"
+  );
 
   const sortOptions = [
     { value: "Default", label: "Default" },
@@ -444,73 +448,121 @@ const CardContainer: React.FC<CardContainerProps> = ({ advertisementType }) => {
 
       {/* Main Content */}
       <div className="max-w-[2520px] mx-auto xl:px-20 md:px-10 sm:px-4 px-2 py-6 relative z-0">
-        {/* Your Listed Properties Section */}
-        {userId && userCars.length > 0 && (
-          <div className="mb-8">
-            <h2 className="text-2xl font-bold mb-4">Your Listed Properties</h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 2xl:grid-cols-3 gap-4 sm:gap-6 md:gap-8">
-              {userCars.map((car) => (
-                <Card
-                  key={car._id}
-                  {...car}
-                  listedBy={user?.firstName || "Unknown User"}
-                />
-              ))}
-            </div>
-          </div>
-        )}
+        {/* Tabs Section */}
+        <Tabs
+          value={activeTab}
+          onValueChange={(value) =>
+            setActiveTab(value as "listings" | "your-listing")
+          }
+          className="w-full"
+        >
+          <TabsList className="grid w-full max-w-md grid-cols-2 mb-6 bg-gray-100">
+            <TabsTrigger
+              value="listings"
+              className="data-[state=active]:bg-white data-[state=active]:shadow-sm"
+            >
+              Listings
+            </TabsTrigger>
+            <TabsTrigger
+              value="your-listing"
+              className="data-[state=active]:bg-white data-[state=active]:shadow-sm"
+            >
+              Your Listing
+            </TabsTrigger>
+          </TabsList>
 
-        {/* Other Listings Section */}
-        <div className="mt-8">
-          <h2 className="text-2xl font-bold mb-4">
-            {advertisementType === "Rent"
-              ? "All Cars for Rent"
-              : advertisementType === "Sale"
-              ? "Cars for Sale"
-              : "Listings"}
-          </h2>
-          {loading && currentPage === 1 ? (
-            <LoadingSkeleton />
-          ) : error ? (
-            <div className="text-center text-red-500">{error}</div>
-          ) : cars.length === 0 ? (
-            <div className="text-center py-10">
-              <p className="text-gray-500">No cars found</p>
-            </div>
-          ) : (
-            <>
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 2xl:grid-cols-3 gap-4 sm:gap-6 md:gap-8">
-                {cars.map((car) => (
-                  <Card
-                    key={car._id}
-                    {...car}
-                    listedBy={user?.firstName || "Unknown User"}
-                  />
-                ))}
-              </div>
-
-              {/* Load More Button - Show for Sale or no advertisement type */}
-              {hasMore && advertisementType !== "Rent" && (
-                <div className="mt-8 flex justify-center">
-                  <button
-                    onClick={loadMore}
-                    disabled={isLoadingMore}
-                    className={`px-6 py-3 text-sm font-medium text-white bg-[#5B8F2D] rounded-lg hover:bg-[#4A7324] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#5B8F2D] disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2`}
-                  >
-                    {isLoadingMore ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        Loading...
-                      </>
-                    ) : (
-                      "Load More"
-                    )}
-                  </button>
+          {/* Your Listing Tab */}
+          <TabsContent value="your-listing" className="mt-0">
+            {userId ? (
+              userCars.length > 0 ? (
+                <div>
+                  <h2 className="text-2xl font-bold mb-4">
+                    Your Listed Properties
+                  </h2>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 2xl:grid-cols-3 gap-4 sm:gap-6 md:gap-8">
+                    {userCars.map((car) => (
+                      <Card
+                        key={car._id}
+                        {...car}
+                        listedBy={user?.firstName || "Unknown User"}
+                      />
+                    ))}
+                  </div>
                 </div>
+              ) : (
+                <div className="text-center py-16">
+                  <Car className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                  <p className="text-xl font-semibold text-gray-600 mb-2">
+                    No listings so far
+                  </p>
+                  <p className="text-gray-500">
+                    You haven&apos;t created any car listings yet.
+                  </p>
+                </div>
+              )
+            ) : (
+              <div className="text-center py-16">
+                <p className="text-gray-500">
+                  Please sign in to view your listings
+                </p>
+              </div>
+            )}
+          </TabsContent>
+
+          {/* All Listings Tab */}
+          <TabsContent value="listings" className="mt-0">
+            <div>
+              <h2 className="text-2xl font-bold mb-4">
+                {advertisementType === "Rent"
+                  ? "All Cars for Rent"
+                  : advertisementType === "Sale"
+                  ? "Cars for Sale"
+                  : "Listings"}
+              </h2>
+              {loading && currentPage === 1 ? (
+                <LoadingSkeleton />
+              ) : error ? (
+                <div className="text-center text-red-500">{error}</div>
+              ) : cars.length === 0 ? (
+                <div className="text-center py-10">
+                  <p className="text-gray-500">No cars found</p>
+                </div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 2xl:grid-cols-3 gap-4 sm:gap-6 md:gap-8">
+                    {cars.map((car) => (
+                      <Card
+                        key={car._id}
+                        {...car}
+                        listedBy={user?.firstName || "Unknown User"}
+                      />
+                    ))}
+                  </div>
+
+                  {/* Load More Button - Show for Sale or no advertisement type */}
+                  {hasMore && advertisementType !== "Rent" && (
+                    <div className="mt-8 flex justify-center">
+                      <button
+                        onClick={loadMore}
+                        disabled={isLoadingMore}
+                        className={`px-6 py-3 text-sm font-medium text-white bg-[#5B8F2D] rounded-lg hover:bg-[#4A7324] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#5B8F2D] disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2`}
+                      >
+                        {isLoadingMore ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            Loading...
+                          </>
+                        ) : (
+                          "Load More"
+                        )}
+                      </button>
+                    </div>
+                  )}
+                </>
               )}
-            </>
-          )}
-        </div>
+            </div>
+          </TabsContent>
+        </Tabs>
       </div>
     </div>
   );
