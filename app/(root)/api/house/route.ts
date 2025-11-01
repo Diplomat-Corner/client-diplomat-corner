@@ -31,12 +31,10 @@ export async function GET(
 
     // Build the query
     const query: {
-      status: string;
+      status?: string | { $in: string[] };
       advertisementType?: string;
       userId?: string | { $ne: string };
-    } = {
-      status: "Active",
-    };
+    } = {};
 
     // Add filters
     if (advertisementType) {
@@ -44,9 +42,15 @@ export async function GET(
     }
     if (userId) {
       query.userId = userId;
-    }
-    if (excludeUserId) {
+      // When fetching user's own listings, show all statuses (Active and Pending)
+      query.status = { $in: ["Active", "Pending"] };
+    } else if (excludeUserId) {
       query.userId = { $ne: excludeUserId };
+      // When fetching other users' listings, only show Active
+      query.status = "Active";
+    } else {
+      // Default: only show Active listings
+      query.status = "Active";
     }
 
     // Calculate skip value for pagination

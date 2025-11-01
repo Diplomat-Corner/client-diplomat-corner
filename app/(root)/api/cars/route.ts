@@ -28,7 +28,7 @@ interface ApiResponse {
 interface CarQuery {
   userId?: string | { $ne: string };
   advertisementType?: string;
-  status: "Active" | "Pending";
+  status?: "Active" | "Pending" | { $in: ("Active" | "Pending")[] };
 }
 
 async function uploadImage(
@@ -145,16 +145,20 @@ export async function GET(
     await connectToDatabase();
 
     // Build the query
-    const query: CarQuery = {
-      status: "Active",
-    };
+    const query: CarQuery = {};
 
     // Add filters
     if (userId) {
       query.userId = userId;
-    }
-    if (excludeUserId) {
+      // When fetching user's own listings, show all statuses (Active and Pending)
+      query.status = { $in: ["Active", "Pending"] };
+    } else if (excludeUserId) {
       query.userId = { $ne: excludeUserId };
+      // When fetching other users' listings, only show Active
+      query.status = "Active";
+    } else {
+      // Default: only show Active listings
+      query.status = "Active";
     }
     if (advertisementType) {
       query.advertisementType = advertisementType;
