@@ -115,36 +115,51 @@ const CardContainer: React.FC<CardContainerProps> = ({ advertisementType }) => {
     { value: "Steam", label: "Steam", category: "essentials" },
   ];
 
+  // Fetch user's own listings independently (not affected by pagination)
+  useEffect(() => {
+    const fetchUserHouses = async () => {
+      if (!userId) {
+        setUserHouses([]);
+        return;
+      }
+
+      try {
+        const userHousesResponse = await fetch(
+          `/api/house?userId=${userId}${
+            advertisementType ? `&advertisementType=${advertisementType}` : ""
+          }`
+        );
+        const userHousesData = await userHousesResponse.json();
+
+        if (userHousesData.success && Array.isArray(userHousesData.houses)) {
+          const formattedUserHouses = userHousesData.houses.map(
+            (house: HouseData) => ({
+              ...house,
+              price: Number(house.price),
+              bedroom: Number(house.bedroom),
+              bathroom: Number(house.bathroom),
+              size: Number(house.size),
+              rating: Number(house.rating) || 0,
+              likes: Number(house.likes) || 0,
+            })
+          );
+          setUserHouses(formattedUserHouses);
+        }
+      } catch (err) {
+        console.error("Error fetching user houses:", err);
+        setUserHouses([]);
+      }
+    };
+
+    fetchUserHouses();
+  }, [userId, advertisementType]);
+
+  // Fetch other users' houses with pagination
   useEffect(() => {
     const fetchHouses = async () => {
       try {
         setLoading(true);
         setError(null);
-
-        // Fetch user's houses if userId is available
-        if (userId) {
-          const userHousesResponse = await fetch(
-            `/api/house?userId=${userId}&limit=1000${
-              advertisementType ? `&advertisementType=${advertisementType}` : ""
-            }`
-          );
-          const userHousesData = await userHousesResponse.json();
-
-          if (userHousesData.success && Array.isArray(userHousesData.houses)) {
-            const formattedUserHouses = userHousesData.houses.map(
-              (house: HouseData) => ({
-                ...house,
-                price: Number(house.price),
-                bedroom: Number(house.bedroom),
-                bathroom: Number(house.bathroom),
-                size: Number(house.size),
-                rating: Number(house.rating) || 0,
-                likes: Number(house.likes) || 0,
-              })
-            );
-            setUserHouses(formattedUserHouses);
-          }
-        }
 
         // Fetch other users' houses with pagination and advertisement type filter
         const response = await fetch(

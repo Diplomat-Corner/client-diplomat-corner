@@ -108,33 +108,48 @@ const CardContainer: React.FC<CardContainerProps> = ({ advertisementType }) => {
     { value: "Manual", label: "Manual", category: "transmission" },
   ];
 
+  // Fetch user's own listings independently (not affected by pagination)
+  useEffect(() => {
+    const fetchUserCars = async () => {
+      if (!userId) {
+        setUserCars([]);
+        return;
+      }
+
+      try {
+        const userCarsResponse = await fetch(
+          `/api/cars?userId=${userId}${
+            advertisementType ? `&advertisementType=${advertisementType}` : ""
+          }`
+        );
+        const userCarsData = await userCarsResponse.json();
+
+        if (userCarsData.success && Array.isArray(userCarsData.cars)) {
+          const formattedUserCars = userCarsData.cars.map((car: CarData) => ({
+            ...car,
+            price: Number(car.price),
+            mileage: Number(car.mileage),
+            year: Number(car.year),
+            rating: Number(car.rating) || 0,
+            likes: Number(car.likes) || 0,
+          }));
+          setUserCars(formattedUserCars);
+        }
+      } catch (err) {
+        console.error("Error fetching user cars:", err);
+        setUserCars([]);
+      }
+    };
+
+    fetchUserCars();
+  }, [userId, advertisementType]);
+
+  // Fetch other users' cars with pagination
   useEffect(() => {
     const fetchCars = async () => {
       try {
         setLoading(true);
         setError(null);
-
-        // Fetch user's cars if userId is available - search entire database
-        if (userId) {
-          const userCarsResponse = await fetch(
-            `/api/cars?userId=${userId}&limit=10000${
-              advertisementType ? `&advertisementType=${advertisementType}` : ""
-            }`
-          );
-          const userCarsData = await userCarsResponse.json();
-
-          if (userCarsData.success && Array.isArray(userCarsData.cars)) {
-            const formattedUserCars = userCarsData.cars.map((car: CarData) => ({
-              ...car,
-              price: Number(car.price),
-              mileage: Number(car.mileage),
-              year: Number(car.year),
-              rating: Number(car.rating) || 0,
-              likes: Number(car.likes) || 0,
-            }));
-            setUserCars(formattedUserCars);
-          }
-        }
 
         // Fetch other users' cars - if advertisement type is Rent, search entire database
         const response = await fetch(
@@ -144,7 +159,7 @@ const CardContainer: React.FC<CardContainerProps> = ({ advertisementType }) => {
             advertisementType === "Rent" ? "10000" : itemsPerPage
           }&excludeUserId=${userId || ""}${
             advertisementType ? `&advertisementType=${advertisementType}` : ""
-          }&status=Active`
+          }`
         );
         const data = await response.json();
 
