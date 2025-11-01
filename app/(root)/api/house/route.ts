@@ -53,7 +53,24 @@ export async function GET(
       query.status = "Active";
     }
 
-    // Calculate skip value for pagination
+    // If userId is provided, skip pagination and return all user's listings
+    if (userId) {
+      const houses = await House.find(query).sort({ createdAt: -1 });
+      const total = houses.length;
+
+      return NextResponse.json({
+        success: true,
+        houses: houses.map((house) => house.toObject()),
+        pagination: {
+          total,
+          page: 1,
+          limit: total,
+          hasMore: false,
+        },
+      });
+    }
+
+    // Calculate skip value for pagination for general listings
     const skip = (page - 1) * limit;
 
     // Get total count for pagination

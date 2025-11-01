@@ -164,7 +164,24 @@ export async function GET(
       query.advertisementType = advertisementType;
     }
 
-    // Calculate pagination
+    // If userId is provided, skip pagination and return all user's listings
+    if (userId) {
+      const cars = await Car.find(query).sort({ createdAt: -1 });
+      const total = cars.length;
+
+      return NextResponse.json({
+        success: true,
+        cars,
+        pagination: {
+          total,
+          page: 1,
+          limit: total,
+          hasMore: false,
+        },
+      });
+    }
+
+    // Calculate pagination for general listings
     const skip = (page - 1) * limit;
 
     // Get total count for pagination
