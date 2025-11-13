@@ -82,6 +82,18 @@ export const images = {
     src: "/assets/images/vital (3).jpg",
     alt: "vital 3",
   },
+  techno_1: {
+    src: "/assets/images/pic01.png",
+    alt: "techno 1",
+  },
+  techno_2: {
+    src: "/assets/images/pic02.png",
+    alt: "techno 2",
+  },
+  techno_3: {
+    src: "/assets/images/pic03.png",
+    alt: "techno 3",
+  },
 };
 
 // Export a function to safely get an image
