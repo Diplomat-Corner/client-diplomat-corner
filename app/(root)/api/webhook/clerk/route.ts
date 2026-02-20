@@ -11,6 +11,7 @@ import Review from "@/lib/models/review.model";
 import Report from "@/lib/models/report.model";
 import Request from "@/lib/models/request.model";
 import Payment from "@/lib/models/payment.model";
+import { webhookLogger } from "@/lib/logger";
 
 // Define a more specific type for the Clerk user data
 interface ClerkUserData {
@@ -40,44 +41,35 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
-  // Log incoming request details
-  console.log("Webhook received: POST request to /api/webhook/clerk");
-  console.log("Headers:", Object.fromEntries(req.headers.entries()));
+  webhookLogger.debug("Webhook received: POST request to /api/webhook/clerk");
 
-  // You can find this in the Clerk Dashboard -> Webhooks -> choose the endpoint
   const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET;
 
   if (!WEBHOOK_SECRET) {
-    console.error(
-      "Please add WEBHOOK_SECRET from Clerk Dashboard to .env or .env.local"
-    );
+    webhookLogger.error("WEBHOOK_SECRET is missing from environment variables");
     return new NextResponse("Webhook secret is missing", { status: 500 });
   }
 
-  // Get the headers from the request directly
   const svix_id = req.headers.get("svix-id");
   const svix_timestamp = req.headers.get("svix-timestamp");
   const svix_signature = req.headers.get("svix-signature");
 
-  // If there are no headers, error out
   if (!svix_id || !svix_timestamp || !svix_signature) {
-    console.error("svix headers are missing");
+    webhookLogger.error("svix headers are missing");
     return new NextResponse("Error occurred -- no svix headers", {
       status: 400,
     });
   }
 
-  // Get the body
   let payload;
   try {
     payload = await req.json();
   } catch (error) {
-    console.error("Error parsing request body:", error);
+    webhookLogger.error("Error parsing request body:", error);
     return new NextResponse("Invalid JSON in request body", { status: 400 });
   }
 
   const body = JSON.stringify(payload);
-  console.log("Webhook payload:", body);
 
   // Create a new Svix instance with your secret.
   const wh = new Webhook(WEBHOOK_SECRET);
@@ -92,14 +84,14 @@ export async function POST(req: NextRequest) {
       "svix-signature": svix_signature,
     }) as WebhookEvent;
   } catch (err) {
-    console.error("Error verifying webhook:", err);
+    webhookLogger.error("Error verifying webhook:", err);
     return new NextResponse("Error verifying webhook signature", {
       status: 400,
     });
   }
 
   const eventType = evt.type;
-  console.log(`Received event ${eventType}`);
+  webhookLogger.debug(`Received event ${eventType}`);
 
   if (eventType === "user.created") {
     try {
@@ -142,7 +134,7 @@ export async function POST(req: NextRequest) {
           timestamp: timestamp,
         });
 
-        console.log("User created successfully:", JSON.stringify(newUser));
+        webhookLogger.info("User created successfully");
         return NextResponse.json(
           { message: "User created successfully", user: newUser },
           { status: 200 }
@@ -204,7 +196,7 @@ export async function POST(req: NextRequest) {
           // Execute all updates
           await Promise.all(updatePromises);
 
-          console.log("User and all related records updated successfully");
+          webhookLogger.info("User and all related records updated successfully");
           return NextResponse.json(
             {
               message: "User updated successfully",
@@ -217,7 +209,7 @@ export async function POST(req: NextRequest) {
         throw error; // Re-throw if it's not a duplicate key error
       }
     } catch (error) {
-      console.error("Error creating/updating user:", error);
+      webhookLogger.error("Error creating/updating user:", error);
       if (error instanceof Error) {
         return NextResponse.json(
           { error: "Failed to create/update user", details: error.message },
@@ -276,13 +268,13 @@ export async function POST(req: NextRequest) {
         throw new Error("User not found");
       }
 
-      console.log("User updated successfully:", JSON.stringify(updatedUser));
+      webhookLogger.info("User updated successfully");
       return NextResponse.json(
         { message: "User updated successfully", user: updatedUser },
         { status: 200 }
       );
     } catch (error) {
-      console.error("Error updating user:", error);
+      webhookLogger.error("Error updating user:", error);
       if (error instanceof Error) {
         return NextResponse.json(
           { error: "Failed to update user", details: error.message },
@@ -344,13 +336,13 @@ export async function POST(req: NextRequest) {
       // Finally delete the user
       await User.deleteOne({ clerkId: id });
 
-      console.log("User and all related records deleted successfully");
+      webhookLogger.info("User and all related records deleted successfully");
       return NextResponse.json(
         { message: "User and all related records deleted successfully" },
         { status: 200 }
       );
     } catch (error) {
-      console.error("Error deleting user:", error);
+      webhookLogger.error("Error deleting user:", error);
       if (error instanceof Error) {
         return NextResponse.json(
           { error: "Failed to delete user", details: error.message },

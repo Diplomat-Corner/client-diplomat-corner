@@ -1,8 +1,9 @@
 // app/api/houses/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import { Document } from "mongoose";
 import House, { IHouse } from "@/lib/models/house.model";
 import { connectToDatabase } from "@/lib/db-connect";
+import { apiLogger } from "@/lib/logger";
+import { cache, CACHE_TTL, CACHE_TAGS, createCacheKey } from "@/lib/cache";
 
 interface ApiResponse {
   success: boolean;
@@ -27,33 +28,42 @@ export async function GET(
     const userId = searchParams.get("userId");
     const excludeUserId = searchParams.get("excludeUserId");
 
+    const cacheKey = createCacheKey(
+      CACHE_TAGS.HOUSES,
+      "list",
+      page,
+      limit,
+      advertisementType,
+      userId,
+      excludeUserId
+    );
+
+    const cachedResponse = cache.get<ApiResponse>(cacheKey);
+    if (cachedResponse && !userId) {
+      return NextResponse.json(cachedResponse);
+    }
+
     await connectToDatabase();
 
-    // Build the query
     const query: {
       status?: string | { $in: string[] };
       advertisementType?: string;
       userId?: string | { $ne: string };
     } = {};
 
-    // Add filters
     if (advertisementType) {
       query.advertisementType = advertisementType;
     }
     if (userId) {
       query.userId = userId;
-      // When fetching user's own listings, show all statuses (Active and Pending)
       query.status = { $in: ["Active", "Pending"] };
     } else if (excludeUserId) {
       query.userId = { $ne: excludeUserId };
-      // When fetching other users' listings, only show Active
       query.status = "Active";
     } else {
-      // Default: only show Active listings
       query.status = "Active";
     }
 
-    // If userId is provided, skip pagination and return all user's listings
     if (userId) {
       const houses = await House.find(query).sort({ createdAt: -1 });
       const total = houses.length;
@@ -70,22 +80,16 @@ export async function GET(
       });
     }
 
-    // Calculate skip value for pagination for general listings
     const skip = (page - 1) * limit;
-
-    // Get total count for pagination
     const total = await House.countDocuments(query);
-
-    // Fetch houses with pagination and filters
     const houses = await House.find(query)
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit);
 
-    // Calculate pagination info
     const hasMore = skip + houses.length < total;
 
-    return NextResponse.json({
+    const response: ApiResponse = {
       success: true,
       houses: houses.map((house) => house.toObject()),
       pagination: {
@@ -94,9 +98,16 @@ export async function GET(
         total,
         hasMore,
       },
+    };
+
+    cache.set(cacheKey, response, {
+      ttl: CACHE_TTL.MEDIUM,
+      tags: [CACHE_TAGS.HOUSES],
     });
+
+    return NextResponse.json(response);
   } catch (error) {
-    console.error("Error in houses API:", error);
+    apiLogger.error("Error in houses API:", error);
     return NextResponse.json(
       { success: false, error: "Internal Server Error" },
       { status: 500 }
@@ -108,7 +119,7 @@ export async function POST(req: Request) {
   try {
     await connectToDatabase();
     const body = await req.json();
-    console.log("POST /api/houses called with body:", body);
+    apiLogger.debug("POST /api/houses called");
     const {
       name,
       userId,
@@ -165,9 +176,12 @@ export async function POST(req: Request) {
     });
 
     await newHouse.save();
+
+    cache.invalidateByTag(CACHE_TAGS.HOUSES);
+
     return NextResponse.json(newHouse, { status: 201 });
   } catch (error) {
-    console.error("Error in POST /api/houses:", error);
+    apiLogger.error("Error in POST /api/houses:", error);
     return NextResponse.json(
       {
         error: `Failed to create house: ${

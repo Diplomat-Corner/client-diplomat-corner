@@ -4,11 +4,8 @@ import Car from "@/lib/models/car.model";
 import Payment from "@/lib/models/payment.model";
 import { auth } from "@clerk/nextjs/server";
 import { v4 as uuidv4 } from "uuid";
-
-const CPANEL_API_URL = process.env.NEXT_PUBLIC_CPANEL_API_URL;
-const CPANEL_USERNAME = process.env.NEXT_PUBLIC_CPANEL_USERNAME;
-const CPANEL_API_TOKEN = process.env.NEXT_PUBLIC_CPANEL_API_TOKEN;
-const PUBLIC_DOMAIN = process.env.NEXT_PUBLIC_PUBLIC_DOMAIN;
+import { uploadImageToCPanel } from "@/lib/upload";
+import { apiLogger } from "@/lib/logger";
 
 interface ApiResponse {
   success: boolean;
@@ -16,106 +13,6 @@ interface ApiResponse {
   message?: string;
   carId?: string;
   paymentId?: string;
-}
-
-async function uploadImage(
-  file: File,
-  folder: "public_images" | "receipts"
-): Promise<{ success: boolean; publicUrl?: string; error?: string }> {
-  const extension = file.name.split(".").pop();
-  const randomFileName = `${uuidv4()}.${extension}`;
-
-  const uploadFolder =
-    folder === "receipts" ? "public_images/receipts" : folder;
-
-  const apiFormData = new FormData();
-  apiFormData.append("dir", `/public_html/${uploadFolder}/`);
-  apiFormData.append("file-1", file, randomFileName);
-
-  const authHeader = `cpanel ${CPANEL_USERNAME}:${
-    CPANEL_API_TOKEN?.trim() || ""
-  }`;
-
-  try {
-    console.log("🚀 Starting image upload to cPanel...");
-    console.log(
-      "📡 API URL:",
-      `${CPANEL_API_URL}/execute/Fileman/upload_files`
-    );
-    console.log("👤 Username:", CPANEL_USERNAME);
-    console.log("🔑 Token exists:", !!CPANEL_API_TOKEN);
-    console.log("📁 Upload folder:", uploadFolder);
-    console.log("📄 File name:", randomFileName);
-    console.log("📏 File size:", file.size, "bytes");
-
-    const response = await fetch(
-      `${CPANEL_API_URL}/execute/Fileman/upload_files`,
-      {
-        method: "POST",
-        headers: { Authorization: authHeader },
-        body: apiFormData,
-      }
-    );
-
-    console.log("📊 Response status:", response.status);
-    console.log("📊 Response status text:", response.statusText);
-    console.log(
-      "📊 Response headers:",
-      Object.fromEntries(response.headers.entries())
-    );
-
-    // Check if response is ok before trying to parse JSON
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("❌ cPanel API error response:", errorText);
-      console.error("❌ Error response length:", errorText.length);
-      console.error("❌ Error response preview:", errorText.substring(0, 500));
-      return {
-        success: false,
-        error: `Upload failed: ${response.status} ${response.statusText}`,
-      };
-    }
-
-    // Try to parse JSON response
-    let data;
-    try {
-      const responseText = await response.text();
-      console.log("📄 Raw response text length:", responseText.length);
-      console.log("📄 Raw response preview:", responseText.substring(0, 500));
-
-      data = JSON.parse(responseText);
-      console.log("✅ Successfully parsed JSON response:", data);
-    } catch (jsonError) {
-      console.error("❌ Failed to parse JSON response:", jsonError);
-      const responseText = await response.text();
-      console.error("❌ Full response text:", responseText);
-      console.error("❌ Response text length:", responseText.length);
-      console.error("❌ Response starts with:", responseText.substring(0, 100));
-      return {
-        success: false,
-        error:
-          "Invalid response from upload service - received HTML instead of JSON",
-      };
-    }
-
-    if (data.status === 0) {
-      return {
-        success: false,
-        error: data.errors?.join(", ") || "Upload failed",
-      };
-    }
-
-    const uploadedFile = data.data?.uploads[0];
-    if (!uploadedFile || !uploadedFile.file) {
-      return { success: false, error: "No uploaded file details returned" };
-    }
-
-    const publicUrl = `${PUBLIC_DOMAIN}/${uploadFolder}/${uploadedFile.file}`;
-    return { success: true, publicUrl };
-  } catch (error) {
-    console.error("Image upload error:", error);
-    return { success: false, error: "Failed to upload image" };
-  }
 }
 
 export async function POST(
@@ -132,7 +29,6 @@ export async function POST(
 
     const formData = await req.formData();
 
-    // Handle multiple files
     const files: File[] = [];
     formData.getAll("files").forEach((file) => {
       if (file instanceof File) {
@@ -140,14 +36,12 @@ export async function POST(
       }
     });
 
-    // For backward compatibility
     const singleFile = formData.get("file") as File | null;
     if (singleFile) {
       files.push(singleFile);
     }
 
-    // Check total size of all files
-    const MAX_TOTAL_SIZE = 2 * 1024 * 1024; // 2MB in bytes (reduced for cPanel compatibility)
+    const MAX_TOTAL_SIZE = 2 * 1024 * 1024;
     const totalSize = files.reduce((acc, file) => acc + file.size, 0);
 
     if (totalSize > MAX_TOTAL_SIZE) {
@@ -181,7 +75,6 @@ export async function POST(
       advertisementType: formData.get("advertisementType") as "Rent" | "Sale",
       paymentMethod: (() => {
         const paymentValue = formData.get("paymentMethod") as string;
-        // Map numeric values to string values expected by the schema
         switch (paymentValue) {
           case "1":
             return "Daily";
@@ -205,7 +98,6 @@ export async function POST(
       timestamp: new Date().toISOString(),
     };
 
-    // Validate required fields
     if (!carData.name || !carData.price || !carData.mileage) {
       return NextResponse.json(
         { success: false, error: "Missing required fields", paymentId: "" },
@@ -213,33 +105,24 @@ export async function POST(
       );
     }
 
-    // Generate payment ID
     const paymentId = `${Date.now()}-${uuidv4()}`;
-
-    // Upload all car images
     const imageUrls: string[] = [];
 
     for (const file of files) {
-      console.log("Uploading image to cPanel...");
-      const uploadResult = await uploadImage(file, "public_images");
+      const uploadResult = await uploadImageToCPanel(file, "public_images");
       if (!uploadResult.success) {
-        console.error("Image upload failed:", uploadResult.error);
+        apiLogger.error("Image upload failed:", uploadResult.error);
         return NextResponse.json(
           { success: false, error: uploadResult.error, paymentId: "" },
           { status: 500 }
         );
       }
       imageUrls.push(uploadResult.publicUrl!);
-      console.log(
-        "Image uploaded successfully. Public URL:",
-        uploadResult.publicUrl
-      );
     }
 
-    // Upload receipt
     let receiptUrl = "";
     if (receiptFile) {
-      const uploadResult = await uploadImage(receiptFile, "receipts");
+      const uploadResult = await uploadImageToCPanel(receiptFile, "receipts");
       if (!uploadResult.success) {
         return NextResponse.json(
           { success: false, error: uploadResult.error, paymentId: "" },
@@ -251,15 +134,13 @@ export async function POST(
 
     await connectToDatabase();
 
-    // Create car with both single image URL and image URLs array
     const car = await Car.create({
       ...carData,
-      imageUrl: imageUrls.length > 0 ? imageUrls[0] : undefined, // Set first image as main image for backward compatibility
-      imageUrls: imageUrls, // Save all image URLs
+      imageUrl: imageUrls.length > 0 ? imageUrls[0] : undefined,
+      imageUrls: imageUrls,
       paymentId,
     });
 
-    // Create payment record
     await Payment.create({
       paymentId,
       servicePrice: Number(formData.get("servicePrice")),
@@ -276,7 +157,7 @@ export async function POST(
       paymentId,
     });
   } catch (error) {
-    console.error("Car creation error:", error);
+    apiLogger.error("Car creation error:", error);
     return NextResponse.json(
       { success: false, error: "Failed to create car", paymentId: "" },
       { status: 500 }

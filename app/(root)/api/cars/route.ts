@@ -4,6 +4,8 @@ import { NextRequest, NextResponse } from "next/server";
 import Payment from "@/lib/models/payment.model";
 import { auth } from "@clerk/nextjs/server";
 import { v4 as uuidv4 } from "uuid";
+import { uploadLogger, apiLogger } from "@/lib/logger";
+import { cache, CACHE_TTL, CACHE_TAGS, createCacheKey } from "@/lib/cache";
 
 const CPANEL_API_URL = process.env.NEXT_PUBLIC_CPANEL_API_URL;
 const CPANEL_USERNAME = process.env.NEXT_PUBLIC_CPANEL_USERNAME;
@@ -50,16 +52,7 @@ async function uploadImage(
   }`;
 
   try {
-    console.log("🚀 Starting image upload to cPanel (cars route)...");
-    console.log(
-      "📡 API URL:",
-      `${CPANEL_API_URL}/execute/Fileman/upload_files`
-    );
-    console.log("👤 Username:", CPANEL_USERNAME);
-    console.log("🔑 Token exists:", !!CPANEL_API_TOKEN);
-    console.log("📁 Upload folder:", uploadFolder);
-    console.log("📄 File name:", randomFileName);
-    console.log("📏 File size:", file.size, "bytes");
+    uploadLogger.debug(`Starting image upload: ${randomFileName} (${file.size} bytes)`);
 
     const response = await fetch(
       `${CPANEL_API_URL}/execute/Fileman/upload_files`,
@@ -70,40 +63,21 @@ async function uploadImage(
       }
     );
 
-    console.log("📊 Response status:", response.status);
-    console.log("📊 Response status text:", response.statusText);
-    console.log(
-      "📊 Response headers:",
-      Object.fromEntries(response.headers.entries())
-    );
-
-    // Check if response is ok before trying to parse JSON
     if (!response.ok) {
       const errorText = await response.text();
-      console.error("❌ cPanel API error response:", errorText);
-      console.error("❌ Error response length:", errorText.length);
-      console.error("❌ Error response preview:", errorText.substring(0, 500));
+      uploadLogger.error(`cPanel API error: ${response.status} - ${errorText.substring(0, 200)}`);
       return {
         success: false,
         error: `Upload failed: ${response.status} ${response.statusText}`,
       };
     }
 
-    // Try to parse JSON response
     let data;
     try {
       const responseText = await response.text();
-      console.log("📄 Raw response text length:", responseText.length);
-      console.log("📄 Raw response preview:", responseText.substring(0, 500));
-
       data = JSON.parse(responseText);
-      console.log("✅ Successfully parsed JSON response:", data);
     } catch (jsonError) {
-      console.error("❌ Failed to parse JSON response:", jsonError);
-      const responseText = await response.text();
-      console.error("❌ Full response text:", responseText);
-      console.error("❌ Response text length:", responseText.length);
-      console.error("❌ Response starts with:", responseText.substring(0, 100));
+      uploadLogger.error("Failed to parse JSON response from cPanel");
       return {
         success: false,
         error:
@@ -124,9 +98,10 @@ async function uploadImage(
     }
 
     const publicUrl = `${PUBLIC_DOMAIN}/${uploadFolder}/${uploadedFile.file}`;
+    uploadLogger.debug(`Upload successful: ${publicUrl}`);
     return { success: true, publicUrl };
   } catch (error) {
-    console.error("Image upload error:", error);
+    uploadLogger.error("Image upload error:", error);
     return { success: false, error: "Failed to upload image" };
   }
 }
@@ -142,29 +117,38 @@ export async function GET(
     const excludeUserId = searchParams.get("excludeUserId");
     const advertisementType = searchParams.get("advertisementType");
 
+    const cacheKey = createCacheKey(
+      CACHE_TAGS.CARS,
+      "list",
+      page,
+      limit,
+      userId,
+      excludeUserId,
+      advertisementType
+    );
+
+    const cachedResponse = cache.get<ApiResponse>(cacheKey);
+    if (cachedResponse && !userId) {
+      return NextResponse.json(cachedResponse);
+    }
+
     await connectToDatabase();
 
-    // Build the query
     const query: CarQuery = {};
 
-    // Add filters
     if (userId) {
       query.userId = userId;
-      // When fetching user's own listings, show all statuses (Active and Pending)
       query.status = { $in: ["Active", "Pending"] };
     } else if (excludeUserId) {
       query.userId = { $ne: excludeUserId };
-      // When fetching other users' listings, only show Active
       query.status = "Active";
     } else {
-      // Default: only show Active listings
       query.status = "Active";
     }
     if (advertisementType) {
       query.advertisementType = advertisementType;
     }
 
-    // If userId is provided, skip pagination and return all user's listings
     if (userId) {
       const cars = await Car.find(query).sort({ createdAt: -1 });
       const total = cars.length;
@@ -181,19 +165,14 @@ export async function GET(
       });
     }
 
-    // Calculate pagination for general listings
     const skip = (page - 1) * limit;
-
-    // Get total count for pagination
     const total = await Car.countDocuments(query);
-
-    // Fetch cars with pagination
     const cars = await Car.find(query)
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit);
 
-    return NextResponse.json({
+    const response: ApiResponse = {
       success: true,
       cars,
       pagination: {
@@ -202,9 +181,16 @@ export async function GET(
         limit,
         hasMore: skip + cars.length < total,
       },
+    };
+
+    cache.set(cacheKey, response, {
+      ttl: CACHE_TTL.MEDIUM,
+      tags: [CACHE_TAGS.CARS],
     });
+
+    return NextResponse.json(response);
   } catch (error) {
-    console.error("Error fetching cars:", error);
+    apiLogger.error("Error fetching cars:", error);
     return NextResponse.json(
       { success: false, error: "Failed to fetch cars" },
       { status: 500 }
