@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, memo } from "react";
 import { Bath, Bed, Car, Ruler, Pencil } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
@@ -83,7 +83,6 @@ const CardHouse: React.FC<CardProps> = ({
         }
 
         if (!response.ok) {
-          console.error("Error fetching user data:", await response.text());
           setUserInfo({
             name: "Administrator",
             imageUrl: "",
@@ -120,8 +119,6 @@ const CardHouse: React.FC<CardProps> = ({
           });
         }
       } catch (error) {
-        console.error("Error fetching user info:", error);
-        // Only show Anonymous for non-admin users
         setUserInfo({
           name: "Administrator",
           imageUrl: "",
@@ -227,4 +224,4 @@ const CardHouse: React.FC<CardProps> = ({
   );
 };
 
-export default CardHouse;
+export default memo(CardHouse);

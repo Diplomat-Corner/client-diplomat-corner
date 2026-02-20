@@ -45,35 +45,26 @@ const NavBar: React.FC = () => {
 
   // Set up notification checking when user data loads
   useEffect(() => {
-    // Skip if Clerk authentication is not loaded yet
     if (!isLoaded) return;
 
-    // Check for existing count in localStorage
     if (typeof window !== "undefined") {
       const storedCount = localStorage.getItem("unreadNotificationsCount");
       if (storedCount) {
         setUnreadNotifications(Number.parseInt(storedCount));
       }
     }
-    // Define notification update event handler
-    const handleNotificationUpdate = (
-      event: CustomEvent<{ count: number }>
-    ) => {
-      if (event.detail && typeof event.detail.count === "number") {
-        setUnreadNotifications(event.detail.count);
+
+    const handleNotificationUpdate = (event: Event) => {
+      const customEvent = event as CustomEvent<{ count: number }>;
+      if (customEvent.detail && typeof customEvent.detail.count === "number") {
+        setUnreadNotifications(customEvent.detail.count);
       }
     };
-    // Add the event listeners
-    window.addEventListener("unreadNotificationsUpdate", ((
-      event: CustomEvent<{ count: number }>
-    ) => handleNotificationUpdate(event)) as EventListener);
 
-    // Cleanup interval when component unmounts or user changes
+    window.addEventListener("unreadNotificationsUpdate", handleNotificationUpdate);
+
     return () => {
-      // Clean up event listeners
-      window.removeEventListener("unreadNotificationsUpdate", ((
-        event: CustomEvent<{ count: number }>
-      ) => handleNotificationUpdate(event)) as EventListener);
+      window.removeEventListener("unreadNotificationsUpdate", handleNotificationUpdate);
     };
   }, [isLoaded, user]);
 
@@ -126,8 +117,7 @@ const NavBar: React.FC = () => {
       const data: SearchResult[] = await response.json();
       setSearchResults(data);
     } catch (error) {
-      console.error("Failed to fetch search results:", error);
-      setSearchResults([]); // Clear results on error
+      setSearchResults([]);
     } finally {
       setIsSearchLoading(false);
     }
@@ -308,7 +298,7 @@ const NavBar: React.FC = () => {
           }
         }
       } catch (error) {
-        console.error("Error checking for new notifications:", error);
+        // Silently fail for notification checks
       }
     };
     // Define notification update handler inside useEffect
@@ -336,7 +326,7 @@ const NavBar: React.FC = () => {
     );
 
     socket.onopen = () => {
-      console.log("WebSocket connection established");
+      // WebSocket connected
     };
 
     socket.onmessage = (event) => {

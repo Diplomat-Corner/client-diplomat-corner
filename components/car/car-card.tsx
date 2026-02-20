@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, memo } from "react";
 import { Car, MapPin, Fuel, Pencil, Calendar } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
@@ -87,8 +87,6 @@ const CarCard: React.FC<CarCardProps> = ({
         }
 
         if (!response.ok) {
-          // Other errors - show anonymous but log the error
-          console.error("Error fetching user data:", await response.text());
           setUserInfo({
             name: "Administrator",
             imageUrl: "",
@@ -125,8 +123,6 @@ const CarCard: React.FC<CarCardProps> = ({
           });
         }
       } catch (error) {
-        console.error("Error fetching user info:", error);
-        // Only show Anonymous for non-admin users
         setUserInfo({
           name: "Administrator",
           imageUrl: "",
@@ -239,4 +235,4 @@ const CarCard: React.FC<CarCardProps> = ({
   );
 };
 
-export default CarCard;
+export default memo(CarCard);
