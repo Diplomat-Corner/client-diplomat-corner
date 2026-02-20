@@ -9,9 +9,7 @@ export default function LoadingSkeleton() {
   const [loadingText, setLoadingText] = useState(
     "Searching for the best cars..."
   );
-  const [carPosition, setCarPosition] = useState(0);
 
-  // Simulate loading progress
   useEffect(() => {
     const interval = setInterval(() => {
       setProgress((prev) => {
@@ -26,7 +24,6 @@ export default function LoadingSkeleton() {
     return () => clearInterval(interval);
   }, []);
 
-  // Update loading text based on progress
   useEffect(() => {
     if (progress < 30) {
       setLoadingText("Searching for the best cars...");
@@ -39,16 +36,6 @@ export default function LoadingSkeleton() {
     }
   }, [progress]);
 
-  // Animate car position
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setCarPosition((prev) => (prev + 1) % 100);
-    }, 100);
-
-    return () => clearInterval(interval);
-  }, []);
-
-  // Card skeleton items
   const skeletonItems = Array.from({ length: 6 }).map((_, index) => (
     <motion.div
       key={index}
@@ -57,14 +44,8 @@ export default function LoadingSkeleton() {
       transition={{ duration: 0.5, delay: 0.1 * index }}
       className="bg-white rounded-xl overflow-hidden shadow-sm border border-gray-100"
     >
-      <div className="h-48 bg-gray-200 animate-pulse relative overflow-hidden">
-        <div
-          className="absolute inset-0 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200"
-          style={{
-            transform: `translateX(${-100 + carPosition * 2}%)`,
-            transition: "transform 0.5s ease-in-out",
-          }}
-        ></div>
+      <div className="h-48 bg-gray-200 relative overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer" />
       </div>
       <div className="p-4 space-y-3">
         <div className="h-6 bg-gray-200 rounded animate-pulse w-3/4"></div>
@@ -79,11 +60,19 @@ export default function LoadingSkeleton() {
 
   return (
     <div className="min-h-screen bg-gray-50 pt-5 pb-16">
-      {/* Hero Section with Loading Animation */}
+      <style jsx global>{`
+        @keyframes shimmer {
+          0% { transform: translateX(-100%); }
+          100% { transform: translateX(100%); }
+        }
+        .animate-shimmer {
+          animation: shimmer 2s infinite ease-in-out;
+        }
+      `}</style>
+
       <div className="container mx-auto px-4 mb-8">
         <div className="relative min-h-96 bg-gradient-to-r from-primary/80 to-primary/40 rounded-xl overflow-hidden flex items-center justify-center">
           <div className="absolute inset-0 overflow-hidden">
-            {/* Animated road */}
             <div className="absolute bottom-0 left-0 right-0 h-16 bg-gray-800">
               <div className="absolute top-1/2 left-0 right-0 h-2 flex">
                 {Array.from({ length: 10 }).map((_, i) => (
@@ -102,12 +91,11 @@ export default function LoadingSkeleton() {
                       duration: 1,
                       ease: "linear",
                     }}
-                  ></motion.div>
+                  />
                 ))}
               </div>
             </div>
 
-            {/* Animated car */}
             <motion.div
               className="absolute top-10 left-1/2 transform -translate-x-1/2"
               animate={{
@@ -145,7 +133,7 @@ export default function LoadingSkeleton() {
               initial={{ width: 0 }}
               animate={{ width: `${progress}%` }}
               className="h-2 bg-white rounded-full mx-auto mb-4 max-w-md"
-            ></motion.div>
+            />
             <motion.p
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -158,7 +146,6 @@ export default function LoadingSkeleton() {
         </div>
       </div>
 
-      {/* Filter Section Skeleton */}
       <div className="container mx-auto px-4 mb-8">
         <div className="bg-white rounded-xl shadow-sm p-4 border border-gray-100">
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -180,7 +167,6 @@ export default function LoadingSkeleton() {
         </div>
       </div>
 
-      {/* Loading Indicator */}
       <div className="container mx-auto px-4 mb-8 flex justify-center">
         <div className="flex items-center gap-3 bg-white px-6 py-3 rounded-full shadow-sm">
           <Loader2 className="h-5 w-5 text-primary animate-spin" />
@@ -189,7 +175,6 @@ export default function LoadingSkeleton() {
         </div>
       </div>
 
-      {/* Card Skeletons */}
       <div className="container mx-auto px-4">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {skeletonItems}

@@ -1,32 +1,26 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
   images: {
-    domains: [
-      "diplomatcorner.net",
-      "images.clerk.dev",
-      "img.clerk.com",
-      "uploadthing.com",
-      "media-api.media-api.diplomatcorner.net",
-      "media-api.diplomatcorner.net",
-      "utfs.io",
-      "files.stripe.com",
-      "www.gravatar.com",
-      "avatars.githubusercontent.com",
+    remotePatterns: [
+      { protocol: "https", hostname: "diplomatcorner.net" },
+      { protocol: "https", hostname: "images.clerk.dev" },
+      { protocol: "https", hostname: "img.clerk.com" },
+      { protocol: "https", hostname: "uploadthing.com" },
+      { protocol: "https", hostname: "media-api.media-api.diplomatcorner.net" },
+      { protocol: "https", hostname: "media-api.diplomatcorner.net" },
+      { protocol: "https", hostname: "utfs.io" },
+      { protocol: "https", hostname: "files.stripe.com" },
+      { protocol: "https", hostname: "www.gravatar.com" },
+      { protocol: "https", hostname: "avatars.githubusercontent.com" },
     ],
-    unoptimized: true,
+    formats: ["image/avif", "image/webp"],
+    minimumCacheTTL: 60 * 60 * 24, // 24 hours
   },
   eslint: {
-    // Warning: This allows production builds to successfully complete even if
-    // your project has ESLint errors.
     ignoreDuringBuilds: true,
   },
   typescript: {
-    // !! WARN !!
-    // Dangerously allow production builds to successfully complete even if
-    // your project has type errors.
-    // !! WARN !!
     ignoreBuildErrors: true,
   },
 };

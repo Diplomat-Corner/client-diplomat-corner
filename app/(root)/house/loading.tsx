@@ -9,9 +9,7 @@ export default function LoadingSkeleton() {
   const [loadingText, setLoadingText] = useState(
     "Searching for the perfect properties..."
   );
-  const [animationPosition, setAnimationPosition] = useState(0);
 
-  // Simulate loading progress
   useEffect(() => {
     const interval = setInterval(() => {
       setProgress((prev) => {
@@ -26,7 +24,6 @@ export default function LoadingSkeleton() {
     return () => clearInterval(interval);
   }, []);
 
-  // Update loading text based on progress
   useEffect(() => {
     if (progress < 30) {
       setLoadingText("Searching for the perfect properties...");
@@ -39,16 +36,6 @@ export default function LoadingSkeleton() {
     }
   }, [progress]);
 
-  // Animate house position
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setAnimationPosition((prev) => (prev + 1) % 100);
-    }, 100);
-
-    return () => clearInterval(interval);
-  }, []);
-
-  // Card skeleton items
   const skeletonItems = Array.from({ length: 6 }).map((_, index) => (
     <motion.div
       key={index}
@@ -57,14 +44,8 @@ export default function LoadingSkeleton() {
       transition={{ duration: 0.5, delay: 0.1 * index }}
       className="bg-white rounded-xl overflow-hidden shadow-sm border border-gray-100"
     >
-      <div className="h-48 bg-gray-200 animate-pulse relative overflow-hidden">
-        <div
-          className="absolute inset-0 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200"
-          style={{
-            transform: `translateX(${-100 + animationPosition * 2}%)`,
-            transition: "transform 0.5s ease-in-out",
-          }}
-        ></div>
+      <div className="h-48 bg-gray-200 relative overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer" />
       </div>
       <div className="p-4 space-y-3">
         <div className="h-6 bg-gray-200 rounded animate-pulse w-3/4"></div>
@@ -79,13 +60,20 @@ export default function LoadingSkeleton() {
 
   return (
     <div className="min-h-screen bg-gray-50 pt-5 pb-16">
-      {/* Hero Section with Loading Animation */}
+      <style jsx global>{`
+        @keyframes shimmer {
+          0% { transform: translateX(-100%); }
+          100% { transform: translateX(100%); }
+        }
+        .animate-shimmer {
+          animation: shimmer 2s infinite ease-in-out;
+        }
+      `}</style>
+
       <div className="container mx-auto px-4 mb-8">
         <div className="relative min-h-96 bg-gradient-to-r from-primary/80 to-primary/40 rounded-xl overflow-hidden flex items-center justify-center">
           <div className="absolute inset-0 overflow-hidden">
-            {/* Animated landscape */}
             <div className="absolute bottom-0 left-0 right-0 h-20">
-              {/* Modern cityscape silhouette */}
               <svg
                 className="w-full h-full"
                 viewBox="0 0 1200 80"
@@ -97,7 +85,6 @@ export default function LoadingSkeleton() {
                   d="M0,80 L0,50 L50,50 L60,30 L80,30 L90,50 L120,50 L120,40 L140,40 L140,20 L160,20 L160,40 L180,40 L180,50 L200,50 L200,30 L220,30 L220,40 L240,40 L240,20 L260,20 L260,40 L280,40 L280,30 L300,30 L300,50 L320,50 L320,40 L340,40 L340,20 L360,20 L360,30 L380,30 L380,50 L400,50 L400,40 L420,40 L420,20 L440,20 L440,30 L460,30 L460,50 L480,50 L480,30 L500,30 L500,40 L520,40 L520,20 L540,20 L540,40 L560,40 L560,50 L580,50 L580,30 L600,30 L600,50 L620,50 L620,40 L640,40 L640,20 L660,20 L660,40 L680,40 L680,30 L700,30 L700,50 L720,50 L720,40 L740,40 L740,20 L760,20 L760,30 L780,30 L780,50 L800,50 L800,40 L820,40 L820,20 L840,20 L840,30 L860,30 L860,50 L880,50 L880,30 L900,30 L900,40 L920,40 L920,20 L940,20 L940,40 L960,40 L960,50 L980,50 L980,30 L1000,30 L1000,50 L1020,50 L1020,40 L1040,40 L1040,20 L1060,20 L1060,40 L1080,40 L1080,30 L1100,30 L1100,50 L1120,50 L1120,40 L1140,40 L1140,20 L1160,20 L1160,30 L1180,30 L1180,50 L1200,50 L1200,80 Z"
                   fill="#1F2937"
                 />
-                {/* Add some subtle window lights */}
                 {Array.from({ length: 30 }).map((_, i) => (
                   <rect
                     key={i}
@@ -112,7 +99,6 @@ export default function LoadingSkeleton() {
               </svg>
             </div>
 
-            {/* Animated house */}
             <motion.div
               className="absolute top-10 left-1/2 transform -translate-x-1/2"
               animate={{
@@ -150,7 +136,7 @@ export default function LoadingSkeleton() {
               initial={{ width: 0 }}
               animate={{ width: `${progress}%` }}
               className="h-2 bg-white rounded-full mx-auto mb-4 max-w-md"
-            ></motion.div>
+            />
             <motion.p
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -163,7 +149,6 @@ export default function LoadingSkeleton() {
         </div>
       </div>
 
-      {/* Filter Section Skeleton */}
       <div className="container mx-auto px-4 mb-8">
         <div className="bg-white rounded-xl shadow-sm p-4 border border-gray-100">
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -185,7 +170,6 @@ export default function LoadingSkeleton() {
         </div>
       </div>
 
-      {/* Loading Indicator */}
       <div className="container mx-auto px-4 mb-8 flex justify-center">
         <div className="flex items-center gap-3 bg-white px-6 py-3 rounded-full shadow-sm">
           <Loader2 className="h-5 w-5 text-primary animate-spin" />
@@ -196,7 +180,6 @@ export default function LoadingSkeleton() {
         </div>
       </div>
 
-      {/* Filter Chips Skeleton */}
       <div className="container mx-auto px-4 mb-8">
         <div className="flex flex-wrap gap-2">
           {Array.from({ length: 6 }).map((_, index) => (
@@ -208,7 +191,6 @@ export default function LoadingSkeleton() {
         </div>
       </div>
 
-      {/* Card Skeletons */}
       <div className="container mx-auto px-4">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {skeletonItems}
