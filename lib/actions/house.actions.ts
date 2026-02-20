@@ -22,15 +22,12 @@ interface HouseData {
 
 export async function createHouse(formData: HouseData) {
   try {
-    console.log("createHouse called with:", formData);
     await connectToDatabase();
 
     const house = await new House(formData).save();
-    console.log("House saved to DB:", house);
     revalidatePath("/houses");
     return { success: true, house: toPlainObject(house) };
   } catch (error) {
-    console.error("Error creating house:", error);
     return { success: false, error: (error as Error).message };
   }
 }
@@ -47,7 +44,6 @@ export async function deleteHouse(houseId: string) {
     revalidatePath("/houses");
     return { success: true, message: "House deleted successfully" };
   } catch (error) {
-    console.error("Error deleting house:", error);
     return { success: false, error: (error as Error).message };
   }
 }
@@ -68,7 +64,6 @@ export async function updateHouseDetails(houseId: string, formData: HouseData) {
     revalidatePath("/houses");
     return { success: true, house: toPlainObject(house) };
   } catch (error) {
-    console.error("Error updating house:", error);
     return { success: false, error: (error as Error).message };
   }
 }
@@ -81,10 +76,8 @@ export async function getAllHouses(): Promise<IHouse[]> {
   try {
     await connectToDatabase();
     const houses = await House.find({});
-    console.log("Fetched houses:", houses);
     return houses.map((house) => toPlainObject(house));
   } catch (error) {
-    console.error("Error fetching houses:", error);
     throw new Error(`Failed to fetch houses: ${(error as Error).message}`);
   }
 }
