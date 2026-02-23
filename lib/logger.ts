@@ -2,9 +2,30 @@ type LogLevel = "debug" | "info" | "warn" | "error";
 
 const isDevelopment = process.env.NODE_ENV === "development";
 
+/** Minimum ms between logging the same rate-limited key (warn/error). */
+const RATE_LIMIT_MS = 60 * 1000; // 1 minute
+
 interface LoggerOptions {
   prefix?: string;
   enabledInProduction?: boolean;
+}
+
+/** Tracks last log time per key so we don't spam the same error every second. */
+const rateLimitMap = new Map<string, number>();
+
+function getRateLimitKey(level: LogLevel, message: string): string {
+  const normalized = message.slice(0, 200).replace(/\s+/g, " ");
+  return `${level}:${normalized}`;
+}
+
+function shouldRateLimit(level: LogLevel, message: string): boolean {
+  if (level !== "warn" && level !== "error") return false;
+  const key = getRateLimitKey(level, message);
+  const now = Date.now();
+  const last = rateLimitMap.get(key) ?? 0;
+  if (now - last < RATE_LIMIT_MS) return true;
+  rateLimitMap.set(key, now);
+  return false;
 }
 
 class Logger {
@@ -42,12 +63,14 @@ class Logger {
 
   warn(message: string, ...args: unknown[]): void {
     if (this.shouldLog("warn")) {
+      if (shouldRateLimit("warn", message)) return;
       console.warn(this.formatMessage("warn", message), ...args);
     }
   }
 
   error(message: string, ...args: unknown[]): void {
     if (this.shouldLog("error")) {
+      if (shouldRateLimit("error", message)) return;
       console.error(this.formatMessage("error", message), ...args);
     }
   }

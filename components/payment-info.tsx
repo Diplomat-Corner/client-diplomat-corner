@@ -3,7 +3,7 @@ import { useState } from "react";
 
 const PaymentInfo = () => {
   const [copied, setCopied] = useState(false);
-  const accountNumber = "+251 994945786";
+  const accountNumber = "1000388072966";
 
   const handleCopy = () => {
     navigator.clipboard.writeText(accountNumber);
@@ -30,10 +30,10 @@ const PaymentInfo = () => {
             <div className="space-y-2">
               <div>
                 <p className="text-xs text-gray-500">Payment Method</p>
-                <p className="text-sm font-medium">TeleBirr</p>
+                <p className="text-sm font-medium">Commerical Bank of Ethiopia</p>
               </div>
               <div>
-                <p className="text-xs text-gray-500">Phone Number</p>
+                <p className="text-xs text-gray-500">Account Number</p>
                 <div className="flex items-center gap-2">
                   <p className="text-sm font-medium">{accountNumber}</p>
                   <button
@@ -51,7 +51,7 @@ const PaymentInfo = () => {
               </div>
               <div>
                 <p className="text-xs text-gray-500">Account Holder Name</p>
-                <p className="text-sm font-medium">Getaneh</p>
+                <p className="text-sm font-medium">Mekenet Advertising</p>
               </div>
             </div>
           </div>
