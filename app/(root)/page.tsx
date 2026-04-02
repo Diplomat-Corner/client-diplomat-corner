@@ -27,6 +27,7 @@ import { useCallback } from "react";
 import { useAuth } from "@clerk/nextjs";
 import { PhoneNumberPopup } from "@/components/PhoneNumberPopup";
 import User from "@/lib/models/user.model";
+import { useTabActive } from "@/hooks/use-tab-active";
 
 // Dynamic Advertisement Component
 const AdvertPlaceholder = ({
@@ -58,7 +59,11 @@ const AdvertPlaceholder = ({
 };
 
 // Advertisement Carousel Component
-const AdvertisementCarousel = () => {
+const AdvertisementCarousel = ({
+  isTabActive,
+}: {
+  isTabActive: boolean;
+}) => {
   const [currentAdIndex, setCurrentAdIndex] = useState(0);
   const [isHovering, setIsHovering] = useState(false);
 
@@ -124,14 +129,14 @@ const AdvertisementCarousel = () => {
 
   // Auto-advance carousel
   useEffect(() => {
-    if (isHovering) return;
+    if (!isTabActive || isHovering) return;
 
     const interval = setInterval(() => {
       nextAd();
     }, 5000); // Change ad every 5 seconds
 
     return () => clearInterval(interval);
-  }, [isHovering]);
+  }, [isTabActive, isHovering]);
 
   const currentAd = advertisements[currentAdIndex];
 
@@ -211,17 +216,19 @@ const AdvertisementCarousel = () => {
 };
 
 // Hero Section
-const HeroSection = () => {
+const HeroSection = ({ isTabActive }: { isTabActive: boolean }) => {
   // Move state and effect outside of the render function
   const [showCar, setShowCar] = useState(true);
 
   useEffect(() => {
+    if (!isTabActive) return;
+
     const interval = setInterval(() => {
       setShowCar((prev) => !prev);
     }, 5000);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [isTabActive]);
 
   return (
     <section className="pt-2 sm:pt-3 md:pt-4">
@@ -229,7 +236,7 @@ const HeroSection = () => {
         <div className="grid grid-cols-1 lg:grid-cols-12 sm:gap-6">
           {/* Left Column - Advertisement Carousel */}
           <div className="lg:col-span-7 space-y-4 sm:space-y-6">
-            <AdvertisementCarousel />
+            <AdvertisementCarousel isTabActive={isTabActive} />
 
             <div className="grid grid-cols-2 gap-3 sm:gap-6">
               <div className="relative overflow-hidden rounded-xl sm:rounded-2xl shadow-sm group">
@@ -378,7 +385,7 @@ const HeroSection = () => {
 };
 
 // Featured Products Carousel
-const FeaturedProducts = () => {
+const FeaturedProducts = ({ isTabActive }: { isTabActive: boolean }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isHovering, setIsHovering] = useState(false);
 
@@ -471,14 +478,21 @@ const FeaturedProducts = () => {
 
   // Auto-scroll when not hovering
   useEffect(() => {
-    if (isHovering || totalProducts <= itemsToShow) return;
+    if (!isTabActive || isHovering || totalProducts <= itemsToShow) return;
 
     const interval = setInterval(() => {
       nextSlide();
     }, 4000);
 
     return () => clearInterval(interval);
-  }, [isHovering, currentIndex, itemsToShow, totalProducts, nextSlide]);
+  }, [
+    isTabActive,
+    isHovering,
+    currentIndex,
+    itemsToShow,
+    totalProducts,
+    nextSlide,
+  ]);
 
   // Format price with currency
   const formatPrice = (price: number, currency: string | undefined) => {
@@ -659,16 +673,18 @@ const FeaturedProducts = () => {
 };
 
 // Single Ad Banner Section
-const SingleAdSection = () => {
+const SingleAdSection = ({ isTabActive }: { isTabActive: boolean }) => {
   const [isFirstAd, setIsFirstAd] = useState(true);
 
   useEffect(() => {
+    if (!isTabActive) return;
+
     const interval = setInterval(() => {
       setIsFirstAd((prev) => !prev);
     }, 10000);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [isTabActive]);
 
   return (
     <section className="py-3 sm:py-4">
@@ -931,6 +947,7 @@ export function AnnouncementBanner() {
 // Home Component
 export default function Home() {
   const { isSignedIn, userId } = useAuth();
+  const isTabActive = useTabActive();
   const [showPhonePopup, setShowPhonePopup] = useState(false);
 
   useEffect(() => {
@@ -961,9 +978,9 @@ export default function Home() {
   return (
     <div className="bg-white">
       <div className="px-1 sm:px-3 lg:px-5 xl:px-6 mx-auto">
-        <HeroSection />
-        <FeaturedProducts />
-        <SingleAdSection />
+        <HeroSection isTabActive={isTabActive} />
+        <FeaturedProducts isTabActive={isTabActive} />
+        <SingleAdSection isTabActive={isTabActive} />
         <WhyChooseUs />
         <ServicesSection />
       </div>

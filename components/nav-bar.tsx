@@ -8,6 +8,7 @@ import { Button } from "./ui/button";
 import { useState, useEffect, useRef, useCallback } from "react";
 import MaxWidthWrapper from "./max-width-wrapper";
 import { Bell, Loader2, Menu, Search } from "lucide-react";
+import { useTabActive } from "@/hooks/use-tab-active";
 
 // Define the type for search results based on your API response
 interface SearchResult {
@@ -28,6 +29,7 @@ interface NavItem {
 
 const NavBar: React.FC = () => {
   const { user, isLoaded } = useUser();
+  const isTabActive = useTabActive();
   const [lastScrollY, setLastScrollY] = useState<number>(0);
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
@@ -268,40 +270,37 @@ const NavBar: React.FC = () => {
   // Effect to setup notification polling and WebSocket connection
   useEffect(() => {
     // Define checkNewNotifications function inside useEffect
-    const checkNewNotifications = async () => {
-      if (!isLoaded || !user) return;
+    if (!isLoaded || !user || !isTabActive) return;
 
+    let wsConnected = false;
+    let wsOpenTimeout: NodeJS.Timeout | null = null;
+
+    const checkNewNotifications = async () => {
       try {
-        // Check for new notifications since last check
         const response = await fetch(
-          `/api/notifications/check-new?userId=${
-            user.id
-          }&lastCheck=${lastCheckTime.current.toISOString()}`
+          `/api/notifications/check-new?userId=${user.id}&lastCheck=${lastCheckTime.current.toISOString()}`
         );
 
-        if (response.ok) {
-          const data = await response.json();
-          if (data.count > 0) {
-            // Update the count
-            setUnreadNotifications(
-              (prev) => Number.parseInt(prev.toString()) + data.count
-            );
+        if (!response.ok) return;
 
-            // Dispatch event for other components
-            const event = new CustomEvent("unreadNotificationsUpdate", {
-              detail: { count: data.count },
-            });
-            window.dispatchEvent(event);
+        const data = await response.json();
+        if (data.count > 0) {
+          setUnreadNotifications(
+            (prev) => Number.parseInt(prev.toString()) + data.count
+          );
 
-            // Update last check time
-            lastCheckTime.current = new Date();
-          }
+          const event = new CustomEvent("unreadNotificationsUpdate", {
+            detail: { count: data.count },
+          });
+          window.dispatchEvent(event);
+
+          lastCheckTime.current = new Date();
         }
-      } catch (error) {
+      } catch {
         // Silently fail for notification checks
       }
     };
-    // Define notification update handler inside useEffect
+
     const handleNotificationUpdate = (event: {
       detail?: { count: number };
     }) => {
@@ -310,15 +309,25 @@ const NavBar: React.FC = () => {
       }
     };
 
-    // First check for new notifications
-    checkNewNotifications();
+    const stopPolling = () => {
+      if (notificationCheckInterval.current) {
+        clearInterval(notificationCheckInterval.current);
+        notificationCheckInterval.current = null;
+      }
+    };
 
-    // Set up polling interval for notifications - every 30 seconds
-    notificationCheckInterval.current = setInterval(() => {
+    const startPolling = () => {
+      if (notificationCheckInterval.current) return;
+
+      // Do one immediate check so badge is updated quickly.
       checkNewNotifications();
-    }, 30000);
+      notificationCheckInterval.current = setInterval(() => {
+        checkNewNotifications();
+      }, 30000);
+    };
 
-    // Connect to WebSocket for real-time notification updates
+    // Connect to WebSocket for real-time notification updates.
+    // If WS doesn't connect quickly (or disconnects), start polling as fallback.
     const socket = new WebSocket(
       `${window.location.protocol === "https:" ? "wss" : "ws"}://${
         window.location.host
@@ -326,24 +335,45 @@ const NavBar: React.FC = () => {
     );
 
     socket.onopen = () => {
-      // WebSocket connected
+      wsConnected = true;
+      if (wsOpenTimeout) clearTimeout(wsOpenTimeout);
+      stopPolling();
     };
 
     socket.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-      if (data.type === "notification" && user && data.userId === user.id) {
-        handleNotificationUpdate(data);
+      try {
+        const data = JSON.parse(event.data);
+        if (
+          data.type === "notification" &&
+          user &&
+          data.userId === user.id
+        ) {
+          handleNotificationUpdate(data);
+        }
+      } catch {
+        // Ignore malformed WS payloads
       }
     };
 
-    // Clean up on unmount
+    const onWsFailure = () => {
+      if (wsOpenTimeout) clearTimeout(wsOpenTimeout);
+      if (!wsConnected) startPolling();
+    };
+
+    socket.onerror = onWsFailure;
+    socket.onclose = onWsFailure;
+
+    // Fallback timer: if WS fails to connect, don't wait forever.
+    wsOpenTimeout = setTimeout(() => {
+      if (!wsConnected) startPolling();
+    }, 5000);
+
     return () => {
-      if (notificationCheckInterval.current) {
-        clearInterval(notificationCheckInterval.current);
-      }
+      stopPolling();
+      if (wsOpenTimeout) clearTimeout(wsOpenTimeout);
       socket.close();
     };
-  }, [isLoaded, user]);
+  }, [isLoaded, user, isTabActive]);
 
   const handleDropdownClick = (label: string) => {
     setActiveDropdown(activeDropdown === label ? null : label);

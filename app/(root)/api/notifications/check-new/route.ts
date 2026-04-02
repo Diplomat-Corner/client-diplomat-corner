@@ -1,6 +1,15 @@
 import { NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/db-connect";
 import Notification from "@/lib/models/notification.model";
+import { cache, CACHE_TTL, CACHE_TAGS, createCacheKey } from "@/lib/cache";
+
+type PushSubscription = {
+  endpoint: string;
+  keys: {
+    p256dh: string;
+    auth: string;
+  };
+};
 
 export async function GET(request: Request) {
   try {
@@ -15,22 +24,48 @@ export async function GET(request: Request) {
       );
     }
 
+    const lastCheckDate = new Date(lastCheck);
+    if (Number.isNaN(lastCheckDate.getTime())) {
+      return NextResponse.json({ error: "Invalid lastCheck" }, { status: 400 });
+    }
+
     await connectToDatabase();
 
-    // Get the user's push subscription
-    const userNotification = await Notification.findOne({ userId });
-    const pushSubscription = userNotification?.pushSubscription;
+    // Cache push-subscription lookup to reduce DB work on every poll.
+    const subscriptionCacheKey = createCacheKey(
+      CACHE_TAGS.NOTIFICATIONS,
+      "pushSubscription",
+      userId
+    );
+
+    let pushSubscription = cache.get<PushSubscription>(subscriptionCacheKey);
+    if (!pushSubscription?.endpoint) {
+      const userNotification = await Notification.findOne({ userId })
+        .select("pushSubscription")
+        .lean();
+      pushSubscription = userNotification?.pushSubscription;
+
+      if (pushSubscription?.endpoint) {
+        cache.set(subscriptionCacheKey, pushSubscription, {
+          ttl: CACHE_TTL.MEDIUM,
+          tags: [CACHE_TAGS.NOTIFICATIONS],
+        });
+      }
+    }
 
     // Count new notifications
     const count = await Notification.countDocuments({
       userId,
-      createdAt: { $gt: new Date(lastCheck) },
+      isRead: false,
+      createdAt: { $gt: lastCheckDate },
     });
 
+    const endpoint = pushSubscription?.endpoint;
+
     // If there are new notifications and user has push subscription
-    if (count > 0 && pushSubscription) {
+    if (count > 0 && endpoint) {
       try {
-        const response = await fetch(pushSubscription.endpoint, {
+        const response = await fetch(endpoint, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
