@@ -12,25 +12,11 @@ import Report from "@/lib/models/report.model";
 import Request from "@/lib/models/request.model";
 import Payment from "@/lib/models/payment.model";
 import { webhookLogger } from "@/lib/logger";
-
-// Define a more specific type for the Clerk user data
-interface ClerkUserData {
-  id: string;
-  first_name: string | null;
-  last_name: string | null;
-  email_addresses: Array<{
-    email_address: string;
-    id: string;
-    verification: {
-      status: string;
-    };
-  }>;
-  image_url: string | null;
-  profile_image_url: string | null;
-  external_accounts?: Array<{
-    image_url?: string;
-  }>;
-}
+import {
+  mapWebhookUserToCreateDoc,
+  mapWebhookUserToProfilePatch,
+  type ClerkWebhookUserPayload,
+} from "@/lib/clerk-user-sync";
 
 // Explicitly define all the HTTP methods that are allowed
 export async function GET() {
@@ -95,44 +81,16 @@ export async function POST(req: NextRequest) {
 
   if (eventType === "user.created") {
     try {
-      // Extract data from the Clerk webhook payload and cast to our interface
-      const userData = evt.data as unknown as ClerkUserData;
-      const {
-        id,
-        first_name,
-        last_name,
-        email_addresses,
-        image_url,
-        profile_image_url,
-        external_accounts,
-      } = userData;
-
-      // Get primary email from the email addresses array
-      const primaryEmail = email_addresses?.[0]?.email_address || "";
-
-      // Get profile image - try profile_image_url first, then image_url, then from external accounts
-      let userImageUrl = profile_image_url || image_url || "";
-      if (!userImageUrl && external_accounts?.[0]?.image_url) {
-        userImageUrl = external_accounts[0].image_url;
-      }
+      const userData = evt.data as unknown as ClerkWebhookUserPayload;
+      const createDoc = mapWebhookUserToCreateDoc(userData);
+      const { id } = userData;
+      const primaryEmail = createDoc.email;
 
       // Connect to database
       await connectToDatabase();
 
       try {
-        // Try to create new user
-        const timestamp = new Date().toISOString();
-        const newUser = await User.create({
-          clerkId: id,
-          email: primaryEmail,
-          firstName: first_name || "",
-          lastName: last_name || "",
-          imageUrl: userImageUrl,
-          role: "customer",
-          address: "",
-          phoneNumber: "",
-          timestamp: timestamp,
-        });
+        const newUser = await User.create(createDoc);
 
         webhookLogger.info("User created successfully");
         return NextResponse.json(
@@ -155,13 +113,14 @@ export async function POST(req: NextRequest) {
           const oldClerkId = existingUser.clerkId;
 
           // Update the existing user with new Clerk ID and data
+          const profilePatch = mapWebhookUserToProfilePatch(userData);
           const updatedUser = await User.findOneAndUpdate(
             { email: primaryEmail },
             {
               clerkId: id,
-              firstName: first_name || existingUser.firstName,
-              lastName: last_name || existingUser.lastName,
-              imageUrl: userImageUrl || existingUser.imageUrl,
+              firstName: profilePatch.firstName || existingUser.firstName,
+              lastName: profilePatch.lastName || existingUser.lastName,
+              imageUrl: profilePatch.imageUrl || existingUser.imageUrl,
             },
             { new: true }
           );
@@ -228,49 +187,35 @@ export async function POST(req: NextRequest) {
 
   if (eventType === "user.updated") {
     try {
-      // Extract data from the Clerk webhook payload and cast to our interface
-      const userData = evt.data as unknown as ClerkUserData;
-      const {
-        id,
-        first_name,
-        last_name,
-        email_addresses,
-        image_url,
-        profile_image_url,
-        external_accounts,
-      } = userData;
+      const userData = evt.data as unknown as ClerkWebhookUserPayload;
+      const { id } = userData;
+      const profilePatch = mapWebhookUserToProfilePatch(userData);
 
-      // Get primary email from the email addresses array
-      const primaryEmail = email_addresses?.[0]?.email_address || "";
-
-      // Get profile image - try profile_image_url first, then image_url, then from external accounts
-      let userImageUrl = profile_image_url || image_url || "";
-      if (!userImageUrl && external_accounts?.[0]?.image_url) {
-        userImageUrl = external_accounts[0].image_url;
-      }
-
-      // Connect to database
       await connectToDatabase();
 
-      // Find and update the user
-      const updatedUser = await User.findOneAndUpdate(
+      let updatedUser = await User.findOneAndUpdate(
         { clerkId: id },
-        {
-          email: primaryEmail,
-          firstName: first_name || "",
-          lastName: last_name || "",
-          imageUrl: userImageUrl,
-        },
+        profilePatch,
         { new: true }
       );
 
+      let created = false;
       if (!updatedUser) {
-        throw new Error("User not found");
+        updatedUser = await User.create(mapWebhookUserToCreateDoc(userData));
+        created = true;
       }
 
-      webhookLogger.info("User updated successfully");
+      webhookLogger.info(
+        created ? "User created via user.updated (was missing)" : "User updated successfully"
+      );
       return NextResponse.json(
-        { message: "User updated successfully", user: updatedUser },
+        {
+          message: created
+            ? "User created successfully (healed from user.updated)"
+            : "User updated successfully",
+          user: updatedUser,
+          created,
+        },
         { status: 200 }
       );
     } catch (error) {
@@ -293,8 +238,7 @@ export async function POST(req: NextRequest) {
 
   if (eventType === "user.deleted") {
     try {
-      // Extract data from the Clerk webhook payload
-      const userData = evt.data as unknown as ClerkUserData;
+      const userData = evt.data as unknown as ClerkWebhookUserPayload;
       const { id } = userData;
 
       // Connect to database

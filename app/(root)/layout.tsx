@@ -1,5 +1,6 @@
 import NavBar from "@/components/nav-bar";
 import Footer from "@/components/footer";
+import { SyncClerkUser } from "@/components/sync-clerk-user";
 import { AnnouncementBanner } from "./page";
 
 export default function RootGroupLayout({
@@ -9,6 +10,7 @@ export default function RootGroupLayout({
 }) {
   return (
     <div className="min-h-screen flex flex-col">
+      <SyncClerkUser />
       <div className="fixed top-0 left-0 right-0 z-50">
         <AnnouncementBanner />
         <NavBar />
