@@ -15,7 +15,7 @@ import {
 import Image from "next/image";
 
 import Link from "next/link";
-import { useState, useRef, useEffect } from "react";
+import { useState, useEffect } from "react";
 import MaxWidthWrapper from "./max-width-wrapper";
 import { useUser } from "@clerk/nextjs";
 import LoadingComponent from "./ui/loading-component";
@@ -24,6 +24,10 @@ import ErrorDialog from "./dialogs/error-dialog";
 import ValidationDialog from "./dialogs/validation-dialog";
 import SuccessDialog from "./dialogs/success-dialog";
 import PaymentInfo from "./payment-info";
+import { useListingImages } from "@/components/manage-listing/useListingImages";
+import { useListingReceipt } from "@/components/manage-listing/useListingReceipt";
+import { appendCommonUploadFields } from "@/components/manage-listing/append-upload-fields";
+import type { ListingImageData } from "@/components/manage-listing/image-types";
 
 interface HouseFormData {
   name: string;
@@ -44,12 +48,7 @@ interface HouseFormData {
   imageUrl?: string;
 }
 
-interface ImageData {
-  file: File | null;
-  preview: string | null;
-  isNew: boolean;
-  id?: string; // For existing images, to track which one to remove
-}
+type ImageData = ListingImageData;
 
 interface ManageHouseProps {
   initialData?: IHouse;
@@ -96,14 +95,24 @@ const ManageHouse: React.FC<ManageHouseProps> = ({
   >([]);
   const [createdHouseId, setCreatedHouseId] = useState<string>("");
 
-  // New multiple images handling
-  const [images, setImages] = useState<ImageData[]>([]);
-  const [removedImageUrls, setRemovedImageUrls] = useState<string[]>([]);
+  const {
+    images,
+    setImages,
+    removedImageUrls,
+    setRemovedImageUrls,
+    fileInputRef,
+    handleFileChange,
+    handleAddMoreImages,
+    handleRemoveImage,
+  } = useListingImages(isEditMode, initialData);
 
-  const [selectedReceipt, setSelectedReceipt] = useState<File | null>(null);
-  const [receiptPreview, setReceiptPreview] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const receiptInputRef = useRef<HTMLInputElement>(null);
+  const {
+    selectedReceipt,
+    receiptPreview,
+    receiptInputRef,
+    handleReceiptChange,
+    clearReceipt,
+  } = useListingReceipt();
 
   const essentials = [
     "WiFi",
@@ -116,32 +125,6 @@ const ManageHouse: React.FC<ManageHouseProps> = ({
     "Jacuzzi",
     "Steam",
   ];
-
-  // Initialize images from existing data
-  useEffect(() => {
-    if (isEditMode && initialData) {
-      if (initialData.imageUrls && initialData.imageUrls.length > 0) {
-        // If there are multiple images
-        const initialImages = initialData.imageUrls.map((url, index) => ({
-          file: null,
-          preview: url,
-          isNew: false,
-          id: `existing-${index}`,
-        }));
-        setImages(initialImages);
-      } else if (initialData.imageUrl) {
-        // If there's only one image
-        setImages([
-          {
-            file: null,
-            preview: initialData.imageUrl,
-            isNew: false,
-            id: "existing-main",
-          },
-        ]);
-      }
-    }
-  }, [isEditMode, initialData]);
 
   const handleInputChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
@@ -158,74 +141,6 @@ const ManageHouse: React.FC<ManageHouseProps> = ({
           ? Number(value)
           : value,
     }));
-  };
-
-  // Updated to handle multiple images
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      const newImages: ImageData[] = [];
-
-      // Convert FileList to array
-      const filesArray = Array.from(e.target.files);
-
-      // Process each file
-      filesArray.forEach((file) => {
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          newImages.push({
-            file: file,
-            preview: reader.result as string,
-            isNew: true,
-            id: `new-${Date.now()}-${Math.random()
-              .toString(36)
-              .substring(2, 9)}`,
-          });
-
-          // Update state after reading the last file
-          if (newImages.length === filesArray.length) {
-            setImages((prev) => [...prev, ...newImages]);
-          }
-        };
-        reader.readAsDataURL(file);
-      });
-    }
-  };
-
-  // Add method to add more images
-  const handleAddMoreImages = () => {
-    if (fileInputRef.current) {
-      fileInputRef.current.click();
-    }
-  };
-
-  // Add method to remove an image
-  const handleRemoveImage = (index: number) => {
-    setImages((prevImages) => {
-      const updatedImages = [...prevImages];
-      const removedImage = updatedImages[index];
-
-      // If it's an existing image (not a new upload), track it for deletion
-      if (!removedImage.isNew && removedImage.preview) {
-        setRemovedImageUrls((prev) => [...prev, removedImage.preview!]);
-      }
-
-      // Remove the image from the array
-      updatedImages.splice(index, 1);
-      return updatedImages;
-    });
-  };
-
-  const handleReceiptChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
-      setSelectedReceipt(file);
-      // Create preview URL
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setReceiptPreview(reader.result as string);
-      };
-      reader.readAsDataURL(file);
-    }
   };
 
   const handleOptionChange = (field: string, value: string) => {
@@ -309,33 +224,12 @@ const ManageHouse: React.FC<ManageHouseProps> = ({
         }
       });
 
-      // Add multiple images
-      images.forEach((image, index) => {
-        if (image.file) {
-          apiFormData.append(`files`, image.file);
-        }
-      });
-
-      // Add existing image URLs for those that weren't changed
-      const existingImages = images
-        .filter((img) => !img.isNew && img.preview)
-        .map((img) => img.preview);
-
-      if (existingImages.length > 0) {
-        apiFormData.append("existingImageUrls", JSON.stringify(existingImages));
-      }
-
-      // Add removed image URLs to be deleted on server
-      if (removedImageUrls.length > 0) {
-        apiFormData.append(
-          "removedImageUrls",
-          JSON.stringify(removedImageUrls)
-        );
-      }
-
-      if (selectedReceipt) {
-        apiFormData.append("receipt", selectedReceipt);
-      }
+      appendCommonUploadFields(
+        apiFormData,
+        images,
+        removedImageUrls,
+        selectedReceipt
+      );
 
       const endpoint = isEditMode
         ? `/api/house/${initialData?._id}`
@@ -372,13 +266,10 @@ const ManageHouse: React.FC<ManageHouseProps> = ({
             currency: "ETB",
           });
           setImages([]);
-          setSelectedReceipt(null);
-          setReceiptPreview(null);
+          setRemovedImageUrls([]);
+          clearReceipt();
           if (fileInputRef.current) {
             fileInputRef.current.value = "";
-          }
-          if (receiptInputRef.current) {
-            receiptInputRef.current.value = "";
           }
         }
       } else {
