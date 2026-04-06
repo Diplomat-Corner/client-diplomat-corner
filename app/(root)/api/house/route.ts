@@ -1,4 +1,4 @@
-// app/api/houses/route.ts
+// GET/POST /api/house — app/(root)/api/house/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import House, { IHouse } from "@/lib/models/house.model";
 import { connectToDatabase } from "@/lib/db-connect";

@@ -7,10 +7,15 @@ import { v4 as uuidv4 } from "uuid";
 import { uploadLogger, apiLogger } from "@/lib/logger";
 import { cache, CACHE_TTL, CACHE_TAGS, createCacheKey } from "@/lib/cache";
 
-const CPANEL_API_URL = process.env.NEXT_PUBLIC_CPANEL_API_URL;
-const CPANEL_USERNAME = process.env.NEXT_PUBLIC_CPANEL_USERNAME;
-const CPANEL_API_TOKEN = process.env.NEXT_PUBLIC_CPANEL_API_TOKEN;
-const PUBLIC_DOMAIN = process.env.NEXT_PUBLIC_PUBLIC_DOMAIN;
+/** Prefer server-only vars; fall back to NEXT_PUBLIC for existing deployments. */
+const CPANEL_API_URL =
+  process.env.CPANEL_API_URL ?? process.env.NEXT_PUBLIC_CPANEL_API_URL;
+const CPANEL_USERNAME =
+  process.env.CPANEL_USERNAME ?? process.env.NEXT_PUBLIC_CPANEL_USERNAME;
+const CPANEL_API_TOKEN =
+  process.env.CPANEL_API_TOKEN ?? process.env.NEXT_PUBLIC_CPANEL_API_TOKEN;
+const PUBLIC_DOMAIN =
+  process.env.PUBLIC_DOMAIN ?? process.env.NEXT_PUBLIC_PUBLIC_DOMAIN;
 
 interface ApiResponse {
   success: boolean;

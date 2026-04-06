@@ -56,6 +56,12 @@ function patchBrokenNodeLocalStorage(): void {
 patchBrokenNodeLocalStorage();
 
 const nextConfig: NextConfig = {
+  async redirects() {
+    return [
+      { source: "/house", destination: "/house-for-rent", permanent: true },
+      { source: "/car", destination: "/car-for-sale", permanent: true },
+    ];
+  },
   images: {
     remotePatterns: [
       { protocol: "https", hostname: "diplomatcorner.net" },

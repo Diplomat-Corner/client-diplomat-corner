@@ -9,8 +9,6 @@ export const MAINTENANCE_MODE = false;
 const isPublicRoute = createRouteMatcher([
   "/maintenance",
   "/",
-  "/car",
-  "/house",
   "/car-for-sale",
   "/house-for-rent",
   "/car-for-rent",
@@ -38,6 +36,13 @@ const isPublicRoute = createRouteMatcher([
 
 export default clerkMiddleware(async (auth, req) => {
   const pathname = req.nextUrl.pathname;
+
+  if (pathname === "/house" || pathname === "/house/") {
+    return NextResponse.redirect(new URL("/house-for-rent", req.url));
+  }
+  if (pathname === "/car" || pathname === "/car/") {
+    return NextResponse.redirect(new URL("/car-for-sale", req.url));
+  }
 
   if (
     process.env.NODE_ENV === "production" &&
