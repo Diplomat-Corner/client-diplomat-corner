@@ -1,5 +1,5 @@
 import React from "react";
-import CardContainer from "@/components/house/card-container";
+import HouseListings from "@/components/house/house-listings";
 import { Metadata } from "next";
 
 export const metadata: Metadata = {
@@ -10,7 +10,7 @@ export const metadata: Metadata = {
 export default function HouseForRentPage() {
   return (
     <div className="container mx-auto py-2">
-      <CardContainer advertisementType="Rent" />
+      <HouseListings advertisementType="Rent" />
     </div>
   );
 }

@@ -5,10 +5,12 @@ import { useEffect, useState } from "react";
 import ManageHouse from "@/components/manage-house";
 import { useUser } from "@clerk/nextjs";
 import { IHouse } from "@/lib/models/house.model";
-import LoadingScreen from "@/components/error/loading-screen";
-import PermissionDeniedScreen from "@/components/error/permission-denied";
-import ErrorScreen from "@/components/error/loading-screen";
-import NotFoundScreen from "@/components/error/not-found-screen";
+import {
+  ErrorScreen,
+  LoadingScreen,
+  NotFoundScreen,
+  PermissionDeniedScreen,
+} from "@/components/error";
 import LoadingComponent from "@/components/ui/loading-component";
 import { useRouter } from "next/navigation";
 

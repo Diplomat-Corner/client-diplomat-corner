@@ -1,5 +1,5 @@
 import React from "react";
-import CardContainer from "@/components/car/card-container";
+import CarListings from "@/components/car/car-listings";
 import { Metadata } from "next";
 
 export const metadata: Metadata = {
@@ -10,7 +10,7 @@ export const metadata: Metadata = {
 export default function CarForSale() {
   return (
     <div className="min-h-screen bg-gray-50">
-      <CardContainer advertisementType="Sale" />
+      <CarListings advertisementType="Sale" />
     </div>
   );
 }

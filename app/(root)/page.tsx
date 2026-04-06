@@ -323,7 +323,7 @@ const HeroSection = ({ isTabActive }: { isTabActive: boolean }) => {
                 >
                   <div className="absolute inset-0 bg-primary/20 rounded-full blur-xl"></div>
                   <Link
-                    href={showCar ? "/car" : "/house"}
+                    href={showCar ? "/car-for-sale" : "/house-for-rent"}
                     className="text-white hover:text-primary group-hover:text-primary relative flex items-center justify-center w-16 h-16 sm:w-20 sm:h-20 bg-transparent backdrop-blur-sm rounded-full shadow-lg border-2 border-white/80 group-hover:bg-white hover:bg-primary transition-colors duration-300"
                   >
                     <div className="text-center">
@@ -354,7 +354,7 @@ const HeroSection = ({ isTabActive }: { isTabActive: boolean }) => {
 
                 <div className="flex gap-2 mt-2 sm:mt-0">
                   <Link
-                    href={showCar ? "/car" : "/house"}
+                    href={showCar ? "/car-for-sale" : "/house-for-rent"}
                     className="inline-flex items-center gap-1 bg-white/90 backdrop-blur-sm text-primary px-2 py-1 sm:px-3 sm:py-1.5 rounded-full text-xs sm:text-sm shadow-md hover:bg-white transition-colors duration-300"
                   >
                     Learn More
