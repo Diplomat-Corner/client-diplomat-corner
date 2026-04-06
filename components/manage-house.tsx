@@ -584,7 +584,7 @@ const ManageHouse: React.FC<ManageHouseProps> = ({
                   {!isEditMode && (
                     <div className="space-y-2">
                       <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Payment Receipt (Optional)
+                        Payment Receipt *
                       </label>
                       <div
                         className="h-40 flex flex-col items-center justify-center border-2 border-dashed border-gray-300 rounded-lg hover:border-primary transition-colors relative overflow-hidden cursor-pointer"
@@ -617,6 +617,7 @@ const ManageHouse: React.FC<ManageHouseProps> = ({
                       </div>
                       <input
                         type="file"
+                        required
                         name="receipt"
                         accept="image/*,.pdf"
                         onChange={handleReceiptChange}
