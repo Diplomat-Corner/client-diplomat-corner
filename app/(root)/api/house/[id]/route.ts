@@ -1,14 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getHouseById } from "@/lib/actions/house.actions";
 import { connectToDatabase } from "@/lib/db-connect";
 import House from "@/lib/models/house.model";
 import { auth } from "@clerk/nextjs/server";
-import { v4 as uuidv4 } from "uuid";
-
-const CPANEL_API_URL = process.env.NEXT_PUBLIC_CPANEL_API_URL;
-const CPANEL_USERNAME = process.env.NEXT_PUBLIC_CPANEL_USERNAME;
-const CPANEL_API_TOKEN = process.env.NEXT_PUBLIC_CPANEL_API_TOKEN;
-const PUBLIC_DOMAIN = process.env.NEXT_PUBLIC_PUBLIC_DOMAIN;
+import { uploadImageToCPanel } from "@/lib/upload";
+import { apiLogger } from "@/lib/logger";
 
 interface ApiResponse {
   success: boolean;
@@ -16,54 +11,6 @@ interface ApiResponse {
   message?: string;
   houseId?: string;
   paymentId?: string;
-}
-
-async function uploadImage(
-  file: File,
-  folder: "public_images" | "receipts"
-): Promise<{ success: boolean; publicUrl?: string; error?: string }> {
-  const extension = file.name.split(".").pop();
-  const randomFileName = `${uuidv4()}.${extension}`;
-
-  const uploadFolder =
-    folder === "receipts" ? "public_images/receipts" : folder;
-
-  const apiFormData = new FormData();
-  apiFormData.append("dir", `/public_html/${uploadFolder}/`);
-  apiFormData.append("file-1", file, randomFileName);
-
-  const authHeader = `cpanel ${CPANEL_USERNAME}:${CPANEL_API_TOKEN.trim()}`;
-
-  try {
-    const response = await fetch(
-      `${CPANEL_API_URL}/execute/Fileman/upload_files`,
-      {
-        method: "POST",
-        headers: { Authorization: authHeader },
-        body: apiFormData,
-      }
-    );
-
-    const data = await response.json();
-
-    if (data.status === 0) {
-      return {
-        success: false,
-        error: data.errors?.join(", ") || "Upload failed",
-      };
-    }
-
-    const uploadedFile = data.data?.uploads[0];
-    if (!uploadedFile || !uploadedFile.file) {
-      return { success: false, error: "No uploaded file details returned" };
-    }
-
-    const publicUrl = `${PUBLIC_DOMAIN}/${uploadFolder}/${uploadedFile.file}`;
-    return { success: true, publicUrl };
-  } catch (error) {
-    console.error("Image upload error:", error);
-    return { success: false, error: "Failed to upload image" };
-  }
 }
 
 export async function GET(
@@ -84,7 +31,7 @@ export async function GET(
 
     return NextResponse.json({ success: true, ...house.toObject() });
   } catch (error) {
-    console.error("Error fetching house:", error);
+    apiLogger.error("Error fetching house:", error);
     return NextResponse.json(
       { success: false, error: "Failed to fetch house", paymentId: "" },
       { status: 500 }
@@ -125,7 +72,6 @@ export async function PUT(
 
     const formData = await req.formData();
 
-    // Handle multiple files
     const files: File[] = [];
     formData.getAll("files").forEach((file) => {
       if (file instanceof File) {
@@ -133,7 +79,6 @@ export async function PUT(
       }
     });
 
-    // For backward compatibility
     const singleFile = formData.get("file") as File | null;
     if (singleFile) {
       files.push(singleFile);
@@ -141,7 +86,6 @@ export async function PUT(
 
     const receiptFile = formData.get("receipt") as File;
 
-    // Parse existing/removed image URLs
     let existingImageUrls: string[] = [];
     try {
       const existingImageUrlsStr = formData.get("existingImageUrls") as string;
@@ -149,7 +93,7 @@ export async function PUT(
         existingImageUrls = JSON.parse(existingImageUrlsStr);
       }
     } catch (e) {
-      console.error("Error parsing existingImageUrls:", e);
+      apiLogger.warn("Error parsing existingImageUrls");
     }
 
     let removedImageUrls: string[] = [];
@@ -159,7 +103,7 @@ export async function PUT(
         removedImageUrls = JSON.parse(removedImageUrlsStr);
       }
     } catch (e) {
-      console.error("Error parsing removedImageUrls:", e);
+      apiLogger.warn("Error parsing removedImageUrls");
     }
 
     const houseData = {
@@ -185,7 +129,6 @@ export async function PUT(
       currency: formData.get("currency") as string,
     };
 
-    // Validate required fields
     if (
       !houseData.name ||
       !houseData.bedroom ||
@@ -201,17 +144,13 @@ export async function PUT(
       );
     }
 
-    // Start with existing image URLs if available, or create an empty array
     let imageUrls: string[] = existingHouse.imageUrls || [];
 
-    // Remove the specified images
     if (removedImageUrls.length > 0) {
       imageUrls = imageUrls.filter((url) => !removedImageUrls.includes(url));
     }
 
-    // Add the existing images from the form
     if (existingImageUrls.length > 0) {
-      // Ensure we don't have duplicates
       existingImageUrls.forEach((url) => {
         if (!imageUrls.includes(url)) {
           imageUrls.push(url);
@@ -219,9 +158,8 @@ export async function PUT(
       });
     }
 
-    // Upload any new house images
     for (const file of files) {
-      const uploadResult = await uploadImage(file, "public_images");
+      const uploadResult = await uploadImageToCPanel(file, "public_images");
       if (!uploadResult.success) {
         return NextResponse.json(
           { success: false, error: uploadResult.error, paymentId: "" },
@@ -231,10 +169,9 @@ export async function PUT(
       imageUrls.push(uploadResult.publicUrl!);
     }
 
-    // Upload new receipt if provided
     let receiptUrl = existingHouse.paymentReceipt?.url;
     if (receiptFile) {
-      const uploadResult = await uploadImage(receiptFile, "receipts");
+      const uploadResult = await uploadImageToCPanel(receiptFile, "receipts");
       if (!uploadResult.success) {
         return NextResponse.json(
           { success: false, error: uploadResult.error, paymentId: "" },
@@ -244,12 +181,11 @@ export async function PUT(
       receiptUrl = uploadResult.publicUrl;
     }
 
-    // Update house with both single imageUrl and imageUrls
     const updatedHouse = await House.findByIdAndUpdate(
       id,
       {
         ...houseData,
-        imageUrl: imageUrls.length > 0 ? imageUrls[0] : existingHouse.imageUrl, // Use first image as primary
+        imageUrl: imageUrls.length > 0 ? imageUrls[0] : existingHouse.imageUrl,
         imageUrls: imageUrls,
         paymentReceipt: receiptUrl
           ? {
@@ -269,7 +205,7 @@ export async function PUT(
       paymentId: existingHouse.paymentId,
     });
   } catch (error) {
-    console.error("House update error:", error);
+    apiLogger.error("House update error:", error);
     return NextResponse.json(
       { success: false, error: "Failed to update house", paymentId: "" },
       { status: 500 }

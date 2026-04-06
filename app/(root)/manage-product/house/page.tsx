@@ -16,12 +16,12 @@ export default function ManageHousePage() {
     }
   }, [isLoaded, user, router]);
 
-  if (!user) {
-    return null; // Will redirect in useEffect
-  }
-
   if (!isLoaded) {
     return <HouseLoadingPage />;
+  }
+
+  if (!user) {
+    return null; // Will redirect in useEffect
   }
 
   return (

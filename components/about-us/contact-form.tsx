@@ -246,7 +246,7 @@ const ContactForm: React.FC = () => {
                     isMobile ? "text-gray-700" : "text-white"
                   }`}
                 >
-                  contact@diplomatcorner.com
+                  contact@diplomatcorner.net
                 </span>
               </li>
               <li className="flex items-center">

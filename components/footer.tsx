@@ -184,7 +184,7 @@ const Footer: React.FC = () => {
             ) : (
               <li>
                 <Link
-                  href="/manage-products"
+                  href="/manage-product/house"
                   className="text-white/80 hover:text-white transition-colors duration-300 flex items-center group"
                 >
                   <span className="relative overflow-hidden">

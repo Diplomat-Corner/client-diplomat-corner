@@ -11,7 +11,7 @@ export async function GET(
   try {
     await connectToDatabase();
 
-    const { id } = params;
+    const { id } = await params;
 
     // Check if id is a valid MongoDB ObjectId or a clerkId
     const isObjectId = /^[0-9a-fA-F]{24}$/.test(id);
@@ -35,6 +35,7 @@ export async function GET(
         firstName: user.firstName,
         lastName: user.lastName,
         imageUrl: user.imageUrl,
+        phoneNumber: user.phoneNumber,
         role: user.role,
       },
     });

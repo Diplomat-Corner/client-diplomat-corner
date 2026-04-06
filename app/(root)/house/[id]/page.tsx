@@ -20,6 +20,7 @@ import {
   CalendarCheck,
   ChevronLeft,
   ChevronRight,
+  Phone,
 } from "lucide-react";
 import type { IHouse } from "@/lib/models/house.model";
 import type { IUser } from "@/lib/models/user.model";
@@ -496,10 +497,27 @@ export default function HouseDetails() {
 
           {/* Replace the button and dialog with conditional contact information */}
           {user && user.role !== "admin" && user.phoneNumber && (
-            <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
-              <h3 className="text-lg font-semibold text-gray-800 mb-2">Contact Seller</h3>
-              <p className="text-gray-600">Phone: {user.phoneNumber}</p>
-            </div>
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5 }}
+              className="bg-gradient-to-br from-gray-50 to-gray-100 p-6 rounded-xl border border-gray-200 shadow-sm"
+            >
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+                  <Phone className="text-primary" size={20} />
+                </div>
+                <h3 className="text-lg font-semibold text-gray-800">
+                  Contact Owner
+                </h3>
+              </div>
+              <div className="flex items-center gap-2 text-gray-600">
+                <span className="font-medium">Phone:</span>
+                <span className="text-primary font-semibold">
+                  {user.phoneNumber}
+                </span>
+              </div>
+            </motion.div>
           )}
         </div>
       </div>

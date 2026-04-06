@@ -3,25 +3,20 @@ import { headers } from "next/headers";
 import { WebhookEvent } from "@clerk/nextjs/server";
 import { connectToDatabase } from "@/lib/db-connect";
 import { NextRequest, NextResponse } from "next/server";
-
-// Define a more specific type for the Clerk user data
-interface ClerkUserData {
-  id: string;
-  first_name: string | null;
-  last_name: string | null;
-  email_addresses: Array<{
-    email_address: string;
-    id: string;
-    verification: {
-      status: string;
-    };
-  }>;
-  image_url: string | null;
-  profile_image_url: string | null;
-  external_accounts?: Array<{
-    image_url?: string;
-  }>;
-}
+import User from "@/lib/models/user.model";
+import Car from "@/lib/models/car.model";
+import House from "@/lib/models/house.model";
+import Notification from "@/lib/models/notification.model";
+import Review from "@/lib/models/review.model";
+import Report from "@/lib/models/report.model";
+import Request from "@/lib/models/request.model";
+import Payment from "@/lib/models/payment.model";
+import { webhookLogger } from "@/lib/logger";
+import {
+  mapWebhookUserToCreateDoc,
+  mapWebhookUserToProfilePatch,
+  type ClerkWebhookUserPayload,
+} from "@/lib/clerk-user-sync";
 
 // Explicitly define all the HTTP methods that are allowed
 export async function GET() {
@@ -32,44 +27,35 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
-  // Log incoming request details
-  console.log("Webhook received: POST request to /api/webhook/clerk");
-  console.log("Headers:", Object.fromEntries(req.headers.entries()));
+  webhookLogger.debug("Webhook received: POST request to /api/webhook/clerk");
 
-  // You can find this in the Clerk Dashboard -> Webhooks -> choose the endpoint
   const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET;
 
   if (!WEBHOOK_SECRET) {
-    console.error(
-      "Please add WEBHOOK_SECRET from Clerk Dashboard to .env or .env.local"
-    );
+    webhookLogger.error("WEBHOOK_SECRET is missing from environment variables");
     return new NextResponse("Webhook secret is missing", { status: 500 });
   }
 
-  // Get the headers from the request directly
   const svix_id = req.headers.get("svix-id");
   const svix_timestamp = req.headers.get("svix-timestamp");
   const svix_signature = req.headers.get("svix-signature");
 
-  // If there are no headers, error out
   if (!svix_id || !svix_timestamp || !svix_signature) {
-    console.error("svix headers are missing");
+    webhookLogger.error("svix headers are missing");
     return new NextResponse("Error occurred -- no svix headers", {
       status: 400,
     });
   }
 
-  // Get the body
   let payload;
   try {
     payload = await req.json();
   } catch (error) {
-    console.error("Error parsing request body:", error);
+    webhookLogger.error("Error parsing request body:", error);
     return new NextResponse("Invalid JSON in request body", { status: 400 });
   }
 
   const body = JSON.stringify(payload);
-  console.log("Webhook payload:", body);
 
   // Create a new Svix instance with your secret.
   const wh = new Webhook(WEBHOOK_SECRET);
@@ -84,94 +70,114 @@ export async function POST(req: NextRequest) {
       "svix-signature": svix_signature,
     }) as WebhookEvent;
   } catch (err) {
-    console.error("Error verifying webhook:", err);
+    webhookLogger.error("Error verifying webhook:", err);
     return new NextResponse("Error verifying webhook signature", {
       status: 400,
     });
   }
 
   const eventType = evt.type;
-  console.log(`Received event ${eventType}`);
+  webhookLogger.debug(`Received event ${eventType}`);
 
   if (eventType === "user.created") {
     try {
-      // Extract data from the Clerk webhook payload and cast to our interface
-      const userData = evt.data as unknown as ClerkUserData;
-      const {
-        id,
-        first_name,
-        last_name,
-        email_addresses,
-        image_url,
-        profile_image_url,
-        external_accounts,
-      } = userData;
+      const userData = evt.data as unknown as ClerkWebhookUserPayload;
+      const createDoc = mapWebhookUserToCreateDoc(userData);
+      const { id } = userData;
+      const primaryEmail = createDoc.email;
 
-      // Get primary email from the email addresses array
-      const primaryEmail = email_addresses?.[0]?.email_address || "";
+      // Connect to database
+      await connectToDatabase();
 
-      // Get profile image - try profile_image_url first, then image_url, then from external accounts
-      let userImageUrl = profile_image_url || image_url || "";
-      if (!userImageUrl && external_accounts?.[0]?.image_url) {
-        userImageUrl = external_accounts[0].image_url;
-      }
+      try {
+        const newUser = await User.create(createDoc);
 
-      // Prepare user data for our API
-      const userDbData = {
-        clerkId: id,
-        email: primaryEmail,
-        firstName: first_name || "",
-        lastName: last_name || "",
-        imageUrl: userImageUrl,
-        role: "customer",
-      };
-
-      console.log("Prepared user data:", JSON.stringify(userDbData));
-
-
-      // Determine the API URL to use
-      const apiUrl = process.env.NEXT_PUBLIC_SERVER_URL || "";
-      
-      if (!apiUrl) {
-        console.error("NEXT_PUBLIC_SERVER_URL is missing");
+        webhookLogger.info("User created successfully");
         return NextResponse.json(
-          { error: "Server URL not configured" },
-          { status: 500 }
+          { message: "User created successfully", user: newUser },
+          { status: 200 }
         );
+      } catch (error) {
+        // If error is a duplicate key error
+        if (
+          error instanceof Error &&
+          error.message.includes("duplicate key error")
+        ) {
+          // Find the existing user with this email
+          const existingUser = await User.findOne({ email: primaryEmail });
+
+          if (!existingUser) {
+            throw new Error("Duplicate email found but user not found");
+          }
+
+          const oldClerkId = existingUser.clerkId;
+
+          // Update the existing user with new Clerk ID and data
+          const profilePatch = mapWebhookUserToProfilePatch(userData);
+          const updatedUser = await User.findOneAndUpdate(
+            { email: primaryEmail },
+            {
+              clerkId: id,
+              firstName: profilePatch.firstName || existingUser.firstName,
+              lastName: profilePatch.lastName || existingUser.lastName,
+              imageUrl: profilePatch.imageUrl || existingUser.imageUrl,
+            },
+            { new: true }
+          );
+
+          // Update all related records
+          const updatePromises = [
+            // Update cars
+            Car.updateMany({ userId: oldClerkId }, { userId: id }),
+            // Update houses
+            House.updateMany({ userId: oldClerkId }, { userId: id }),
+            // Update notifications
+            Notification.updateMany({ userId: oldClerkId }, { userId: id }),
+            // Update reviews (both as reviewer and reviewee)
+            Review.updateMany({ userId: oldClerkId }, { userId: id }),
+            Review.updateMany(
+              { targetUserId: oldClerkId },
+              { targetUserId: id }
+            ),
+            // Update reports (both as reporter and reported entity)
+            Report.updateMany({ reportedBy: oldClerkId }, { reportedBy: id }),
+            Report.updateMany(
+              { entityId: oldClerkId, entityType: "user" },
+              { entityId: id }
+            ),
+            // Update requests (both as sender and receiver)
+            Request.updateMany({ fromUserId: oldClerkId }, { fromUserId: id }),
+            Request.updateMany({ toUserId: oldClerkId }, { toUserId: id }),
+            // Update payments
+            Payment.updateMany({ userId: oldClerkId }, { userId: id }),
+          ];
+
+          // Execute all updates
+          await Promise.all(updatePromises);
+
+          webhookLogger.info("User and all related records updated successfully");
+          return NextResponse.json(
+            {
+              message: "User updated successfully",
+              user: updatedUser,
+              note: "Updated existing user and migrated all associated records",
+            },
+            { status: 200 }
+          );
+        }
+        throw error; // Re-throw if it's not a duplicate key error
       }
-
-
-      // Call our API to create the user
-      const response = await fetch(`${apiUrl}/api/users`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(userDbData),
-      });
-
-      const result = await response.json();
-
-      if (!response.ok) {
-        throw new Error(result.error || "Failed to create user");
-      }
-
-      console.log("User created successfully:", JSON.stringify(result));
-      return NextResponse.json(
-        { message: "User created successfully", user: result.user },
-        { status: 200 }
-      );
     } catch (error) {
-      console.error("Error creating user:", error);
+      webhookLogger.error("Error creating/updating user:", error);
       if (error instanceof Error) {
         return NextResponse.json(
-          { error: "Failed to create user", details: error.message },
+          { error: "Failed to create/update user", details: error.message },
           { status: 500 }
         );
       }
       return NextResponse.json(
         {
-          error: "Failed to create user",
+          error: "Failed to create/update user",
           details: "An unknown error occurred",
         },
         { status: 500 }
@@ -181,74 +187,39 @@ export async function POST(req: NextRequest) {
 
   if (eventType === "user.updated") {
     try {
-      // Extract data from the Clerk webhook payload and cast to our interface
-      const userData = evt.data as unknown as ClerkUserData;
-      const {
-        id,
-        first_name,
-        last_name,
-        email_addresses,
-        image_url,
-        profile_image_url,
-      } = userData;
+      const userData = evt.data as unknown as ClerkWebhookUserPayload;
+      const { id } = userData;
+      const profilePatch = mapWebhookUserToProfilePatch(userData);
 
-      // Get primary email from the email addresses array
-      const primaryEmail = email_addresses?.[0]?.email_address;
+      await connectToDatabase();
 
-      // Get profile image
-      const userImageUrl = profile_image_url || image_url || "";
+      let updatedUser = await User.findOneAndUpdate(
+        { clerkId: id },
+        profilePatch,
+        { new: true }
+      );
 
-      // Prepare user data for our API
-      const userDbData: {
-        clerkId: string;
-        firstName: string | null;
-        lastName: string | null;
-        imageUrl: string;
-        email?: string;
-      } = {
-        clerkId: id,
-        firstName: first_name,
-        lastName: last_name,
-        imageUrl: userImageUrl,
-      };
-
-      // Only include email if it exists
-      if (primaryEmail) {
-        userDbData.email = primaryEmail;
+      let created = false;
+      if (!updatedUser) {
+        updatedUser = await User.create(mapWebhookUserToCreateDoc(userData));
+        created = true;
       }
 
-      // Determine the API URL to use
-      const apiUrl = process.env.NEXT_PUBLIC_SERVER_URL || "";
-      if (!apiUrl) {
-        console.error("NEXT_PUBLIC_SERVER_URL is missing");
-        return NextResponse.json(
-          { error: "Server URL not configured" },
-          { status: 500 }
-        );
-      }
-
-      // Call our API to update the user
-      const response = await fetch(`${apiUrl}/api/users`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(userDbData),
-      });
-
-      const result = await response.json();
-
-      if (!response.ok) {
-        throw new Error(result.error || "Failed to update user");
-      }
-
-      console.log("User updated successfully:", JSON.stringify(result));
+      webhookLogger.info(
+        created ? "User created via user.updated (was missing)" : "User updated successfully"
+      );
       return NextResponse.json(
-        { message: "User updated successfully", user: result.user },
+        {
+          message: created
+            ? "User created successfully (healed from user.updated)"
+            : "User updated successfully",
+          user: updatedUser,
+          created,
+        },
         { status: 200 }
       );
     } catch (error) {
-      console.error("Error updating user:", error);
+      webhookLogger.error("Error updating user:", error);
       if (error instanceof Error) {
         return NextResponse.json(
           { error: "Failed to update user", details: error.message },
@@ -267,41 +238,55 @@ export async function POST(req: NextRequest) {
 
   if (eventType === "user.deleted") {
     try {
-      // Extract the Clerk user ID
-      const userData = evt.data as unknown as ClerkUserData;
+      const userData = evt.data as unknown as ClerkWebhookUserPayload;
       const { id } = userData;
 
-      // Determine the API URL to use
-      const apiUrl = process.env.NEXT_PUBLIC_SERVER_URL || "";
-      if (!apiUrl) {
-        console.error("NEXT_PUBLIC_SERVER_URL is missing");
+      // Connect to database
+      await connectToDatabase();
+
+      // Find the user first to ensure they exist
+      const user = await User.findOne({ clerkId: id });
+      if (!user) {
         return NextResponse.json(
-          { error: "Server URL not configured" },
-          { status: 500 }
+          { message: "User not found, nothing to delete" },
+          { status: 200 }
         );
       }
 
-      // Call our API to delete the user
-      const response = await fetch(`${apiUrl}/api/users/${id}`, {
-        method: "DELETE",
-        headers: {
-          "Content-Type": "application/json",
-        },
-      });
+      // Delete all related records first
+      const deletePromises = [
+        // Delete cars
+        Car.deleteMany({ userId: id }),
+        // Delete houses
+        House.deleteMany({ userId: id }),
+        // Delete notifications
+        Notification.deleteMany({ userId: id }),
+        // Delete reviews (both as reviewer and reviewee)
+        Review.deleteMany({ userId: id }),
+        Review.deleteMany({ targetUserId: id }),
+        // Delete reports (both as reporter and reported entity)
+        Report.deleteMany({ reportedBy: id }),
+        Report.deleteMany({ entityId: id, entityType: "user" }),
+        // Delete requests (both as sender and receiver)
+        Request.deleteMany({ fromUserId: id }),
+        Request.deleteMany({ toUserId: id }),
+        // Delete payments
+        Payment.deleteMany({ userId: id }),
+      ];
 
-      const result = await response.json();
+      // Execute all deletes
+      await Promise.all(deletePromises);
 
-      if (!response.ok) {
-        throw new Error(result.error || "Failed to delete user");
-      }
+      // Finally delete the user
+      await User.deleteOne({ clerkId: id });
 
-      console.log("User deleted successfully:", JSON.stringify(result));
+      webhookLogger.info("User and all related records deleted successfully");
       return NextResponse.json(
-        { message: "User deleted successfully" },
+        { message: "User and all related records deleted successfully" },
         { status: 200 }
       );
     } catch (error) {
-      console.error("Error deleting user:", error);
+      webhookLogger.error("Error deleting user:", error);
       if (error instanceof Error) {
         return NextResponse.json(
           { error: "Failed to delete user", details: error.message },
@@ -318,9 +303,9 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // If we get here, we've received a webhook event we're not explicitly handling
-  console.log(`Unhandled webhook event type: ${eventType}`);
-  return new NextResponse(`Webhook event received: ${eventType}`, {
-    status: 200,
-  });
+  // Return a 200 response for any other event types
+  return NextResponse.json(
+    { message: `Unhandled event type: ${eventType}` },
+    { status: 200 }
+  );
 }

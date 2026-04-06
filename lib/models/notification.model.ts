@@ -92,5 +92,11 @@ const NotificationSchema = new Schema<INotification>(
   { timestamps: { createdAt: true, updatedAt: true } }
 );
 
+// Indexes to speed up notification polling:
+// - `findOne({ userId })` for push subscription lookup
+// - `countDocuments({ userId, isRead: false, createdAt: { $gt: ... }})` for unread counts
+NotificationSchema.index({ userId: 1 });
+NotificationSchema.index({ userId: 1, isRead: 1, createdAt: 1 });
+
 export default models.Notification ||
   model<INotification>("Notification", NotificationSchema);

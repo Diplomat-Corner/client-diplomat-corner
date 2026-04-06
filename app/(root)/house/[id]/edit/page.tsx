@@ -5,10 +5,12 @@ import { useEffect, useState } from "react";
 import ManageHouse from "@/components/manage-house";
 import { useUser } from "@clerk/nextjs";
 import { IHouse } from "@/lib/models/house.model";
-import LoadingScreen from "@/components/error/loading-screen";
-import PermissionDeniedScreen from "@/components/error/permission-denied";
-import ErrorScreen from "@/components/error/loading-screen";
-import NotFoundScreen from "@/components/error/not-found-screen";
+import {
+  ErrorScreen,
+  LoadingScreen,
+  NotFoundScreen,
+  PermissionDeniedScreen,
+} from "@/components/error";
 import LoadingComponent from "@/components/ui/loading-component";
 import { useRouter } from "next/navigation";
 
@@ -79,9 +81,8 @@ export default function EditHousePage({ params }: EditHousePageProps) {
   if (!house) return <NotFoundScreen />;
 
   return (
-    <div className="container mx-auto px-4 py-8">
-      <h1 className="text-2xl font-bold mb-6">Edit House Listing</h1>
-      <ManageHouse initialData={house} />
+    <div className="container mx-auto px-2 py-8">
+      <ManageHouse isEditMode={true} initialData={house} />
     </div>
   );
 }

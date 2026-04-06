@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuth } from "@clerk/nextjs/server";
+import { uploadLogger } from "@/lib/logger";
 
 interface UploadResponse {
   success: boolean;
@@ -21,7 +22,6 @@ if (
   throw new Error("Missing required cPanel environment variables");
 }
 
-// Define the cPanel API response structure
 interface CpanelResponse {
   status: number;
   errors?: string[] | null;
@@ -67,6 +67,8 @@ export async function POST(
     const buffer = await file.arrayBuffer();
     const base64Data = Buffer.from(buffer).toString("base64");
 
+    uploadLogger.debug(`Starting upload: ${file.name} (${file.size} bytes)`);
+
     const response = await fetch(
       `${CPANEL_API_URL}/execute/Fileman/upload_files`,
       {
@@ -86,15 +88,45 @@ export async function POST(
     );
 
     if (!response.ok) {
-      throw new Error("Failed to upload file to cPanel");
+      const errorText = await response.text();
+      uploadLogger.error(`cPanel API error: ${response.status} - ${errorText.substring(0, 200)}`);
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Upload failed: ${response.status} ${response.statusText}`,
+        },
+        { status: response.status }
+      );
     }
 
-    const data = await response.json();
-    const fileUrl = `${PUBLIC_DOMAIN}/uploads/${file.name}`;
+    let data;
+    try {
+      const responseText = await response.text();
+      data = JSON.parse(responseText);
+    } catch {
+      uploadLogger.error("Failed to parse JSON response from cPanel");
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "Invalid response from upload service - received HTML instead of JSON",
+        },
+        { status: 500 }
+      );
+    }
 
+    if (data.status === 0 || data.errors) {
+      return NextResponse.json(
+        { success: false, error: data.errors?.join(", ") || "Upload failed" },
+        { status: 500 }
+      );
+    }
+
+    const fileUrl = `${PUBLIC_DOMAIN}/uploads/${file.name}`;
+    uploadLogger.debug(`Upload successful: ${fileUrl}`);
     return NextResponse.json({ success: true, publicUrl: fileUrl });
   } catch (error) {
-    console.error("Error uploading file:", error);
+    uploadLogger.error("Error uploading file:", error);
     return NextResponse.json(
       { success: false, error: "Failed to upload file" },
       { status: 500 }

@@ -21,6 +21,7 @@ const paymentSchema = new Schema(
     servicePrice: {
       type: Number,
       required: true,
+      default: 3000,
     },
     receiptUrl: {
       type: String,
@@ -47,4 +48,5 @@ const paymentSchema = new Schema(
   { timestamps: true }
 );
 
-export default mongoose.models.Payment || mongoose.model<IPayment>("Payment", paymentSchema); 
+export default mongoose.models.Payment ||
+  mongoose.model<IPayment>("Payment", paymentSchema);

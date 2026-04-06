@@ -50,7 +50,7 @@ const houseSchema = new Schema(
     condition: { type: String },
     maintenance: { type: String },
     essentials: [{ type: String }],
-    currency: { type: String },
+    currency: { type: String, default: "USD" },
     imageUrl: { type: String },
     imageUrls: [{ type: String }],
     paymentId: {

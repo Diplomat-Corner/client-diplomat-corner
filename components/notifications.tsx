@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useUser } from "@clerk/nextjs";
 import {
@@ -24,6 +24,7 @@ import {
   NotificationType,
   NotificationCategory,
 } from "@/types/notifications";
+import { useTabActive } from "@/hooks/use-tab-active";
 
 interface FormattedMessageProps {
   message: string;
@@ -263,14 +264,13 @@ const FormattedMessage: React.FC<FormattedMessageProps> = ({ message }) => {
 
 export default function Notifications() {
   const { user, isLoaded } = useUser();
+  const isTabActive = useTabActive();
   const [notifications, setNotifications] = useState<INotification[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeFilter, setActiveFilter] = useState<string>("all");
   const [expandedNotification, setExpandedNotification] = useState<
     string | null
   >(null);
-  const [lastCheck, setLastCheck] = useState<Date | null>(null);
-  const [isPolling, setIsPolling] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const [deletingIds, setDeletingIds] = useState<string[]>([]);
 
@@ -327,93 +327,27 @@ export default function Notifications() {
       }
       const data = await response.json();
       setNotifications(data);
-      setLastCheck(new Date());
       setUnreadCount(data.filter((n: INotification) => !n.isRead).length);
     } catch (error) {
       console.error("Failed to fetch notifications:", error);
     } finally {
       setLoading(false);
     }
-  }, [isLoaded, user, setNotifications, setLastCheck, setLoading]);
+  }, [isLoaded, user, setNotifications, setLoading]);
 
   // Initial fetch
   useEffect(() => {
     fetchNotifications();
   }, [fetchNotifications]);
 
-  // Wrap checkNewNotifications in useCallback
-  const checkNewNotifications = useCallback(async () => {
-    if (!isLoaded || !user || !lastCheck || isPolling) return;
-
-    setIsPolling(true);
-    try {
-      const response = await fetch(
-        `/api/notifications/check-new?userId=${
-          user.id
-        }&lastCheck=${lastCheck.toISOString()}`
-      );
-      if (!response.ok) throw new Error("Failed to check new notifications");
-
-      const { count } = await response.json();
-      if (count > 0) {
-        // Fetch only new notifications
-        const newResponse = await fetch(
-          `/api/notifications?userId=${
-            user.id
-          }&since=${lastCheck.toISOString()}`
-        );
-        if (!newResponse.ok)
-          throw new Error("Failed to fetch new notifications");
-
-        const newNotifications = await newResponse.json();
-
-        // Add new notifications to the top of the stack with animation
-        setNotifications((prev) => {
-          // Filter out any duplicates
-          const existingIds = new Set(prev.map((n) => n._id));
-          const uniqueNewNotifications = newNotifications.filter(
-            (n: INotification) => !existingIds.has(n._id)
-          );
-
-          // Return new notifications followed by existing ones
-          return [...uniqueNewNotifications, ...prev];
-        });
-
-        setLastCheck(new Date());
-        setUnreadCount(
-          (prev) =>
-            prev +
-            newNotifications.filter((n: INotification) => !n.isRead).length
-        );
-      }
-    } catch (error) {
-      console.error("Error checking new notifications:", error);
-    } finally {
-      setIsPolling(false);
-    }
-  }, [
-    isLoaded,
-    user,
-    lastCheck,
-    isPolling,
-    setIsPolling,
-    setNotifications,
-    setLastCheck,
-    setUnreadCount,
-  ]);
-
-  // Set up polling interval for new notifications
+  // Refresh notifications only when the tab becomes active again.
+  const prevTabActiveRef = useRef<boolean>(isTabActive);
   useEffect(() => {
-    if (!isLoaded || !user) return;
-
-    // Check for new notifications every 30 seconds
-    const intervalId = setInterval(() => {
-      checkNewNotifications();
-    }, 30000);
-
-    // Clean up on unmount
-    return () => clearInterval(intervalId);
-  }, [isLoaded, user, checkNewNotifications]);
+    if (prevTabActiveRef.current === false && isTabActive === true) {
+      fetchNotifications();
+    }
+    prevTabActiveRef.current = isTabActive;
+  }, [isTabActive, fetchNotifications]);
 
   // Update the badge count when notifications change
   useEffect(() => {

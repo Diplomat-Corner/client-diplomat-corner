@@ -12,6 +12,7 @@ import {
   PermissionDeniedScreen,
 } from "@/components/error";
 import { useRouter } from "next/navigation";
+import LoadingComponent from "@/components/ui/loading-component";
 
 export default function EditCarPage() {
   const { id } = useParams();
@@ -57,7 +58,7 @@ export default function EditCarPage() {
     }
   }, [isLoaded, user, router]);
 
-  if (loading) return <LoadingScreen />;
+  if (loading) return <LoadingComponent />;
   if (permissionDenied)
     return (
       <PermissionDeniedScreen message="You do not have permission to edit this car." />
@@ -65,17 +66,13 @@ export default function EditCarPage() {
   if (error) return <ErrorScreen message={error} />;
   if (!car) return <NotFoundScreen />;
 
-  if (!isLoaded) {
-    return <LoadingScreen />;
-  }
-
   if (!user) {
     return null; // Will redirect in useEffect
   }
 
   return (
     <div className="container mx-auto px-4 py-8">
-      <ManageCar initialData={car} />
+      <ManageCar isEditMode={true} initialData={car} />
     </div>
   );
 }

@@ -27,6 +27,7 @@ interface SearchResult {
 export interface FilterOption {
   value: string;
   label: string;
+  category: string;
 }
 
 export interface FilterSectionProps {
@@ -35,9 +36,13 @@ export interface FilterSectionProps {
   filterOptions: FilterOption[]; // Options for filter chips and/or sorting options
   activeFilters: string[];
   onFilterChange: (filters: string[]) => void;
-  onSearchResultSelect?: (result: SearchResult) => void; // Optional callback for search result selection
+  onSearchResultSelect: (result: {
+    id: string;
+    name: string;
+    type: string;
+  }) => void;
   showSearchResults?: boolean; // Flag to control if search results should be shown
-  modelType?: "car" | "house"; // Optional model type to filter search results
+  modelType: "car" | "house"; // Optional model type to filter search results
 }
 
 const FilterSection: React.FC<FilterSectionProps> = ({
@@ -47,7 +52,7 @@ const FilterSection: React.FC<FilterSectionProps> = ({
   activeFilters,
   onFilterChange,
   onSearchResultSelect,
-  showSearchResults = true,
+  showSearchResults = false,
   modelType,
 }) => {
   // Local state for search input and UI states
@@ -61,6 +66,15 @@ const FilterSection: React.FC<FilterSectionProps> = ({
   const selectRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Group filter options by category
+  const groupedFilters = filterOptions.reduce((acc, option) => {
+    if (!acc[option.category]) {
+      acc[option.category] = [];
+    }
+    acc[option.category].push(option);
+    return acc;
+  }, {} as Record<string, FilterOption[]>);
 
   // Close the select dropdown when clicking outside
   useEffect(() => {
@@ -174,12 +188,11 @@ const FilterSection: React.FC<FilterSectionProps> = ({
   };
 
   // Handle filter chip toggling
-  const handleFilterClick = (value: string) => {
-    if (activeFilters.includes(value)) {
-      onFilterChange(activeFilters.filter((filter) => filter !== value));
-    } else {
-      onFilterChange([...activeFilters, value]);
-    }
+  const handleFilterToggle = (value: string) => {
+    const newFilters = activeFilters.includes(value)
+      ? activeFilters.filter((f) => f !== value)
+      : [...activeFilters, value];
+    onFilterChange(newFilters);
   };
 
   // Get current sort option label from sort options (or fallback)
@@ -299,7 +312,7 @@ const FilterSection: React.FC<FilterSectionProps> = ({
                 <input
                   ref={searchRef}
                   type="text"
-                  placeholder="Search listings..."
+                  placeholder={`Search ${modelType}s...`}
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   onFocus={() => {
@@ -498,7 +511,7 @@ const FilterSection: React.FC<FilterSectionProps> = ({
                     }}
                     whileHover={{ scale: 1.05, y: -2 }}
                     whileTap={{ scale: 0.95 }}
-                    onClick={() => handleFilterClick(option.value)}
+                    onClick={() => handleFilterToggle(option.value)}
                     className={`px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 flex items-center gap-2 ${
                       activeFilters.includes(option.value)
                         ? "bg-gradient-to-r from-green-600 to-green-500 text-white shadow-md"

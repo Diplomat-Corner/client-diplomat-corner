@@ -3,6 +3,7 @@ import User from "@/lib/models/user.model";
 import { NextResponse } from "next/server";
 import { auth, currentUser } from "@clerk/nextjs/server";
 
+
 // Get all users (with optional query filters)
 export async function GET(req: Request) {
   try {
@@ -18,6 +19,7 @@ export async function GET(req: Request) {
     const clerkId = url.searchParams.get("clerkId");
     const email = url.searchParams.get("email");
     const role = url.searchParams.get("role");
+    
     const limit = parseInt(url.searchParams.get("limit") || "50");
     const skip = parseInt(url.searchParams.get("skip") || "0");
     // Build query based on provided parameters
@@ -25,6 +27,7 @@ export async function GET(req: Request) {
     if (clerkId) query.clerkId = clerkId;
     if (email) query.email = email;
     if (role) query.role = role;
+  
 
     // Fetch users with pagination
     const users = await User.find(query)
@@ -33,7 +36,7 @@ export async function GET(req: Request) {
       .skip(skip);
 
     const total = await User.countDocuments(query);
-
+    
     return NextResponse.json({
       users,
       pagination: {

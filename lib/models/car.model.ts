@@ -53,7 +53,7 @@ const carSchema = new Schema(
     condition: { type: String, default: "" },
     engine: { type: String, default: "" },
     maintenance: { type: String, default: "" },
-    currency: { type: String, default: "ETB" },
+    currency: { type: String, default: "USD" },
     tags: { type: String, default: "" },
     imageUrl: { type: String },
     imageUrls: [{ type: String }],

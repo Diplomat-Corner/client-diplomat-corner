@@ -12,7 +12,7 @@ import {
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import MaxWidthWrapper from "@/components/max-width-wrapper";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { useUser } from "@clerk/nextjs";
 import { ArrowLeft } from "lucide-react";
 
@@ -21,6 +21,11 @@ import LoadingComponent from "./ui/loading-component";
 import ErrorDialog from "./dialogs/error-dialog";
 import ValidationDialog from "./dialogs/validation-dialog";
 import SuccessDialog from "./dialogs/success-dialog";
+import PaymentInfo from "./payment-info";
+import { useListingImages } from "@/components/manage-listing/useListingImages";
+import { useListingReceipt } from "@/components/manage-listing/useListingReceipt";
+import { appendCommonUploadFields } from "@/components/manage-listing/append-upload-fields";
+import type { ListingImageData } from "@/components/manage-listing/image-types";
 
 interface ICarExtended extends ICar {
   servicePrice?: number;
@@ -47,12 +52,7 @@ interface CarFormData {
   tags: string;
 }
 
-interface ImageData {
-  file: File | null;
-  preview: string | null;
-  isNew: boolean;
-  id?: string; // For existing images, to track which one to remove
-}
+type ImageData = ListingImageData;
 
 interface ManageCarProps {
   initialData?: ICarExtended;
@@ -80,7 +80,7 @@ const ManageCar: React.FC<ManageCarProps> = ({
     engine: initialData?.engine || "",
     maintenance: initialData?.maintenance || "",
     price: initialData?.price || 0,
-    servicePrice: initialData?.servicePrice || 0,
+    servicePrice: initialData?.servicePrice || 3000,
     description: initialData?.description || "",
     advertisementType:
       (initialData?.advertisementType as "Rent" | "Sale") || "Sale",
@@ -99,40 +99,24 @@ const ManageCar: React.FC<ManageCarProps> = ({
   >([]);
   const [createdCarId, setCreatedCarId] = useState<string>("");
 
-  // New multiple images handling
-  const [images, setImages] = useState<ImageData[]>([]);
-  const [removedImageUrls, setRemovedImageUrls] = useState<string[]>([]);
+  const {
+    images,
+    setImages,
+    removedImageUrls,
+    setRemovedImageUrls,
+    fileInputRef,
+    handleFileChange,
+    handleAddMoreImages,
+    handleRemoveImage,
+  } = useListingImages(isEditMode, initialData);
 
-  const [selectedReceipt, setSelectedReceipt] = useState<File | null>(null);
-  const [receiptPreview, setReceiptPreview] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const receiptInputRef = useRef<HTMLInputElement>(null);
-
-  // Initialize images from existing data
-  useEffect(() => {
-    if (isEditMode && initialData) {
-      if (initialData.imageUrls && initialData.imageUrls.length > 0) {
-        // If there are multiple images
-        const initialImages = initialData.imageUrls.map((url, index) => ({
-          file: null,
-          preview: url,
-          isNew: false,
-          id: `existing-${index}`,
-        }));
-        setImages(initialImages);
-      } else if (initialData.imageUrl) {
-        // If there's only one image
-        setImages([
-          {
-            file: null,
-            preview: initialData.imageUrl,
-            isNew: false,
-            id: "existing-main",
-          },
-        ]);
-      }
-    }
-  }, [isEditMode, initialData]);
+  const {
+    selectedReceipt,
+    receiptPreview,
+    receiptInputRef,
+    handleReceiptChange,
+    clearReceipt,
+  } = useListingReceipt();
 
   useEffect(() => {
     if (isLoaded) {
@@ -170,73 +154,6 @@ const ManageCar: React.FC<ManageCarProps> = ({
           ? Number(value)
           : value,
     }));
-  };
-
-  // Updated to handle multiple images
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      const newImages: ImageData[] = [];
-
-      // Convert FileList to array
-      const filesArray = Array.from(e.target.files);
-
-      // Process each file
-      filesArray.forEach((file) => {
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          newImages.push({
-            file: file,
-            preview: reader.result as string,
-            isNew: true,
-            id: `new-${Date.now()}-${Math.random()
-              .toString(36)
-              .substring(2, 9)}`,
-          });
-
-          // Update state after reading the last file
-          if (newImages.length === filesArray.length) {
-            setImages((prev) => [...prev, ...newImages]);
-          }
-        };
-        reader.readAsDataURL(file);
-      });
-    }
-  };
-
-  // Add method to add more images
-  const handleAddMoreImages = () => {
-    if (fileInputRef.current) {
-      fileInputRef.current.click();
-    }
-  };
-
-  // Add method to remove an image
-  const handleRemoveImage = (index: number) => {
-    setImages((prevImages) => {
-      const updatedImages = [...prevImages];
-      const removedImage = updatedImages[index];
-
-      // If it's an existing image (not a new upload), track it for deletion
-      if (!removedImage.isNew && removedImage.preview) {
-        setRemovedImageUrls((prev) => [...prev, removedImage.preview!]);
-      }
-
-      // Remove the image from the array
-      updatedImages.splice(index, 1);
-      return updatedImages;
-    });
-  };
-
-  const handleReceiptChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
-      setSelectedReceipt(file);
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setReceiptPreview(reader.result as string);
-      };
-      reader.readAsDataURL(file);
-    }
   };
 
   const handleOptionChange = (field: string, value: string) => {
@@ -328,33 +245,12 @@ const ManageCar: React.FC<ManageCarProps> = ({
         }
       });
 
-      // Add multiple images
-      images.forEach((image, index) => {
-        if (image.file) {
-          apiFormData.append(`files`, image.file);
-        }
-      });
-
-      // Add existing image URLs for those that weren't changed
-      const existingImages = images
-        .filter((img) => !img.isNew && img.preview)
-        .map((img) => img.preview);
-
-      if (existingImages.length > 0) {
-        apiFormData.append("existingImageUrls", JSON.stringify(existingImages));
-      }
-
-      // Add removed image URLs to be deleted on server
-      if (removedImageUrls.length > 0) {
-        apiFormData.append(
-          "removedImageUrls",
-          JSON.stringify(removedImageUrls)
-        );
-      }
-
-      if (selectedReceipt) {
-        apiFormData.append("receipt", selectedReceipt);
-      }
+      appendCommonUploadFields(
+        apiFormData,
+        images,
+        removedImageUrls,
+        selectedReceipt
+      );
 
       const endpoint = isEditMode
         ? `/api/cars/${initialData?._id}`
@@ -399,13 +295,10 @@ const ManageCar: React.FC<ManageCarProps> = ({
             tags: "",
           });
           setImages([]);
-          setSelectedReceipt(null);
-          setReceiptPreview(null);
+          setRemovedImageUrls([]);
+          clearReceipt();
           if (fileInputRef.current) {
             fileInputRef.current.value = "";
-          }
-          if (receiptInputRef.current) {
-            receiptInputRef.current.value = "";
           }
         }
       } else {
@@ -721,7 +614,14 @@ const ManageCar: React.FC<ManageCarProps> = ({
                         ? `${images.length} image(s) selected.`
                         : ""}
                     </p>
+                    <p className="text-xs mt-1 text-red-400">
+                      Total image size cannot exceed 4.0MB. Please compress your
+                      images if needed.
+                    </p>
                   </div>
+
+                  {/* Payment Information */}
+                  {!isEditMode && <PaymentInfo />}
 
                   {/* Receipt Upload */}
                   {!isEditMode && (
@@ -917,7 +817,7 @@ const ManageCar: React.FC<ManageCarProps> = ({
                     Currency
                   </label>
                   <div className="flex gap-2">
-                    {["ETB", "USD"].map((option) => (
+                    {["ETB", "USD", "EUR", "GBP"].map((option) => (
                       <button
                         key={option}
                         type="button"

@@ -1,7 +1,7 @@
 "use client";
 
 import { sendNotification } from "@/lib/actions/notification.actions";
-import React, { FormEvent, useEffect, useState } from "react";
+import React, { FormEvent, useEffect, useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useParams } from "next/navigation";
 import { useAuth, useUser } from "@clerk/nextjs";
@@ -38,8 +38,16 @@ const ContactSellerDialog: React.FC<ContactSellerDialogProps> = ({
   const { user } = useUser();
   const params = useParams();
   const productId = params.id as string;
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Reset form when dialog opens
+  useEffect(() => {
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+    };
+  }, []);
+
   useEffect(() => {
     if (isOpen) {
       setPhoneNumber("");
@@ -248,13 +256,14 @@ const ContactSellerDialog: React.FC<ContactSellerDialogProps> = ({
 
       setIsSubmitted(true);
 
-      // Auto-close after success
-      setTimeout(() => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+      timeoutRef.current = setTimeout(() => {
         setIsSubmitted(false);
         onClose();
       }, 3000);
     } catch (err: unknown) {
-      console.error("Error submitting contact request:", err);
       setError(
         err instanceof Error
           ? err.message

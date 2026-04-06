@@ -4,11 +4,18 @@ import { NextRequest, NextResponse } from "next/server";
 import Payment from "@/lib/models/payment.model";
 import { auth } from "@clerk/nextjs/server";
 import { v4 as uuidv4 } from "uuid";
+import { uploadLogger, apiLogger } from "@/lib/logger";
+import { cache, CACHE_TTL, CACHE_TAGS, createCacheKey } from "@/lib/cache";
 
-const CPANEL_API_URL = process.env.NEXT_PUBLIC_CPANEL_API_URL;
-const CPANEL_USERNAME = process.env.NEXT_PUBLIC_CPANEL_USERNAME;
-const CPANEL_API_TOKEN = process.env.NEXT_PUBLIC_CPANEL_API_TOKEN;
-const PUBLIC_DOMAIN = process.env.NEXT_PUBLIC_PUBLIC_DOMAIN;
+/** Prefer server-only vars; fall back to NEXT_PUBLIC for existing deployments. */
+const CPANEL_API_URL =
+  process.env.CPANEL_API_URL ?? process.env.NEXT_PUBLIC_CPANEL_API_URL;
+const CPANEL_USERNAME =
+  process.env.CPANEL_USERNAME ?? process.env.NEXT_PUBLIC_CPANEL_USERNAME;
+const CPANEL_API_TOKEN =
+  process.env.CPANEL_API_TOKEN ?? process.env.NEXT_PUBLIC_CPANEL_API_TOKEN;
+const PUBLIC_DOMAIN =
+  process.env.PUBLIC_DOMAIN ?? process.env.NEXT_PUBLIC_PUBLIC_DOMAIN;
 
 interface ApiResponse {
   success: boolean;
@@ -23,6 +30,12 @@ interface ApiResponse {
     limit: number;
     hasMore: boolean;
   };
+}
+
+interface CarQuery {
+  userId?: string | { $ne: string };
+  advertisementType?: string;
+  status?: "Active" | "Pending" | { $in: ("Active" | "Pending")[] };
 }
 
 async function uploadImage(
@@ -44,6 +57,8 @@ async function uploadImage(
   }`;
 
   try {
+    uploadLogger.debug(`Starting image upload: ${randomFileName} (${file.size} bytes)`);
+
     const response = await fetch(
       `${CPANEL_API_URL}/execute/Fileman/upload_files`,
       {
@@ -53,7 +68,27 @@ async function uploadImage(
       }
     );
 
-    const data = await response.json();
+    if (!response.ok) {
+      const errorText = await response.text();
+      uploadLogger.error(`cPanel API error: ${response.status} - ${errorText.substring(0, 200)}`);
+      return {
+        success: false,
+        error: `Upload failed: ${response.status} ${response.statusText}`,
+      };
+    }
+
+    let data;
+    try {
+      const responseText = await response.text();
+      data = JSON.parse(responseText);
+    } catch (jsonError) {
+      uploadLogger.error("Failed to parse JSON response from cPanel");
+      return {
+        success: false,
+        error:
+          "Invalid response from upload service - received HTML instead of JSON",
+      };
+    }
 
     if (data.status === 0) {
       return {
@@ -68,9 +103,10 @@ async function uploadImage(
     }
 
     const publicUrl = `${PUBLIC_DOMAIN}/${uploadFolder}/${uploadedFile.file}`;
+    uploadLogger.debug(`Upload successful: ${publicUrl}`);
     return { success: true, publicUrl };
   } catch (error) {
-    console.error("Image upload error:", error);
+    uploadLogger.error("Image upload error:", error);
     return { success: false, error: "Failed to upload image" };
   }
 }
@@ -82,47 +118,86 @@ export async function GET(
     const { searchParams } = new URL(req.url);
     const page = parseInt(searchParams.get("page") || "1");
     const limit = parseInt(searchParams.get("limit") || "20");
+    const userId = searchParams.get("userId");
+    const excludeUserId = searchParams.get("excludeUserId");
     const advertisementType = searchParams.get("advertisementType");
+
+    const cacheKey = createCacheKey(
+      CACHE_TAGS.CARS,
+      "list",
+      page,
+      limit,
+      userId,
+      excludeUserId,
+      advertisementType
+    );
+
+    const cachedResponse = cache.get<ApiResponse>(cacheKey);
+    if (cachedResponse && !userId) {
+      return NextResponse.json(cachedResponse);
+    }
 
     await connectToDatabase();
 
-    // Build the query
-    const query: { status: string; advertisementType?: string } = {
-      status: "Active",
-    };
+    const query: CarQuery = {};
+
+    if (userId) {
+      query.userId = userId;
+      query.status = { $in: ["Active", "Pending"] };
+    } else if (excludeUserId) {
+      query.userId = { $ne: excludeUserId };
+      query.status = "Active";
+    } else {
+      query.status = "Active";
+    }
     if (advertisementType) {
       query.advertisementType = advertisementType;
     }
 
-    // Calculate skip value for pagination
+    if (userId) {
+      const cars = await Car.find(query).sort({ createdAt: -1 });
+      const total = cars.length;
+
+      return NextResponse.json({
+        success: true,
+        cars,
+        pagination: {
+          total,
+          page: 1,
+          limit: total,
+          hasMore: false,
+        },
+      });
+    }
+
     const skip = (page - 1) * limit;
-
-    // Get total count for pagination
     const total = await Car.countDocuments(query);
-
-    // Fetch cars with pagination and filters
     const cars = await Car.find(query)
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit);
 
-    // Calculate pagination info
-    const hasMore = skip + cars.length < total;
-
-    return NextResponse.json({
+    const response: ApiResponse = {
       success: true,
-      cars: cars.map((car) => car.toObject()),
+      cars,
       pagination: {
+        total,
         page,
         limit,
-        total,
-        hasMore,
+        hasMore: skip + cars.length < total,
       },
+    };
+
+    cache.set(cacheKey, response, {
+      ttl: CACHE_TTL.MEDIUM,
+      tags: [CACHE_TAGS.CARS],
     });
+
+    return NextResponse.json(response);
   } catch (error) {
-    console.error("Error in cars API:", error);
+    apiLogger.error("Error fetching cars:", error);
     return NextResponse.json(
-      { success: false, error: "Internal Server Error" },
+      { success: false, error: "Failed to fetch cars" },
       { status: 500 }
     );
   }
@@ -131,7 +206,6 @@ export async function GET(
 export async function POST(
   req: NextRequest
 ): Promise<NextResponse<ApiResponse>> {
-  // Redirect POST requests to the create route
   const createUrl = new URL("/api/cars/create", req.url);
   return NextResponse.redirect(createUrl) as NextResponse<ApiResponse>;
 }

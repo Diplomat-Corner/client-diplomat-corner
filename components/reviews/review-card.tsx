@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, Fragment } from "react";
+import { useState, Fragment, useEffect, useRef } from "react";
 import {
   Star,
   ThumbsUp,
@@ -60,6 +60,15 @@ export default function ReviewCard({
   const [isSubmittingReport, setIsSubmittingReport] = useState(false);
   const [reportSuccess, setReportSuccess] = useState(false);
   const [reportError, setReportError] = useState("");
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+    };
+  }, []);
 
   const likesCount =
     review.likes.length +
@@ -146,12 +155,13 @@ export default function ReviewCard({
       setReportType(null);
       setReportDescription("");
 
-      // Auto-close modal after success
-      setTimeout(() => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+      timeoutRef.current = setTimeout(() => {
         handleCloseReportModal();
       }, 3000);
     } catch (error) {
-      console.error("Error submitting report:", error);
       setReportError(
         error instanceof Error ? error.message : "Failed to submit report"
       );

@@ -22,11 +22,13 @@ import {
   Check,
   Clock,
   Zap,
+  X,
 } from "lucide-react";
 import { useCallback } from "react";
 import { useAuth } from "@clerk/nextjs";
 import { PhoneNumberPopup } from "@/components/PhoneNumberPopup";
 import User from "@/lib/models/user.model";
+import { useTabActive } from "@/hooks/use-tab-active";
 
 // Dynamic Advertisement Component
 const AdvertPlaceholder = ({
@@ -57,77 +59,203 @@ const AdvertPlaceholder = ({
   );
 };
 
+// Advertisement Carousel Component
+const AdvertisementCarousel = ({
+  isTabActive,
+}: {
+  isTabActive: boolean;
+}) => {
+  const [currentAdIndex, setCurrentAdIndex] = useState(0);
+  const [isHovering, setIsHovering] = useState(false);
+
+  // Advertisement data array using vital images
+  const advertisements = [
+    {
+      id: 1,
+      image: images.vial_logo.src,
+      alt: images.vial_logo.alt,
+      badge: "Featured Ad",
+      title: "Vital Security",
+      description: "Discover premium security solutions for your needs.",
+      link: "https://www.vitalsecureplc.com",
+      linkText: "Learn More",
+    },
+    {
+      id: 2,
+      image: images.vital_1.src,
+      alt: images.vital_1.alt,
+      badge: "Sponsored",
+      title: "Vital Security",
+      description: "Comprehensive security service for diplomatic community",
+      link: "https://www.vitalsecureplc.com",
+      linkText: "Explore Services",
+    },
+    {
+      id: 3,
+      image: images.vital_2.src,
+      alt: images.vital_2.alt,
+      badge: "Sponsored",
+      title: "Vital Security",
+      description: "Excellence in international standards.",
+      link: "https://www.vitalsecureplc.com",
+      linkText: "Visit Website",
+    },
+    {
+      id: 4,
+      image: images.vital_3.src,
+      alt: images.vital_3.alt,
+      badge: "Sponsored",
+      title: "Vital Security",
+      description: "Innovative vital security solutions for modern needs.",
+      link: "https://www.vitalsecureplc.com",
+      linkText: "Contact Us",
+    },
+  ];
+
+  const nextAd = () => {
+    setCurrentAdIndex((prevIndex) =>
+      prevIndex === advertisements.length - 1 ? 0 : prevIndex + 1
+    );
+  };
+
+  const prevAd = () => {
+    setCurrentAdIndex((prevIndex) =>
+      prevIndex === 0 ? advertisements.length - 1 : prevIndex - 1
+    );
+  };
+
+  const goToAd = (index: number) => {
+    setCurrentAdIndex(index);
+  };
+
+  // Auto-advance carousel
+  useEffect(() => {
+    if (!isTabActive || isHovering) return;
+
+    const interval = setInterval(() => {
+      nextAd();
+    }, 5000); // Change ad every 5 seconds
+
+    return () => clearInterval(interval);
+  }, [isTabActive, isHovering]);
+
+  const currentAd = advertisements[currentAdIndex];
+
+  return (
+    <div
+      className="relative overflow-hidden rounded-xl sm:rounded-2xl shadow-sm group"
+      onMouseEnter={() => setIsHovering(true)}
+      onMouseLeave={() => setIsHovering(false)}
+    >
+      <Image
+        width={800}
+        height={420}
+        src={currentAd.image || "/placeholder.svg"}
+        alt={currentAd.alt}
+        className="w-full h-[320px] sm:h-[420px] object-cover transition-transform duration-500 group-hover:scale-105"
+        priority
+      />
+      <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent"></div>
+
+      {/* Navigation Arrows */}
+      <button
+        onClick={prevAd}
+        className="absolute left-2 top-1/2 transform -translate-y-1/2 bg-white/20 backdrop-blur-sm text-white p-2 rounded-full hover:bg-white/30 transition-colors duration-300 opacity-0 group-hover:opacity-100"
+        aria-label="Previous advertisement"
+      >
+        <ChevronLeft className="w-4 h-4" />
+      </button>
+      <button
+        onClick={nextAd}
+        className="absolute right-2 top-1/2 transform -translate-y-1/2 bg-white/20 backdrop-blur-sm text-white p-2 rounded-full hover:bg-white/30 transition-colors duration-300 opacity-0 group-hover:opacity-100"
+        aria-label="Next advertisement"
+      >
+        <ChevronRight className="w-4 h-4" />
+      </button>
+
+      {/* Content Overlay */}
+      <div className="absolute bottom-0 left-0 p-4 sm:p-6 w-full">
+        <span className="bg-primary/90 text-white text-xs px-3 py-1 rounded-full backdrop-blur-sm">
+          {currentAd.badge}
+        </span>
+        <h3 className="text-white text-xl sm:text-2xl font-bold mt-2 mb-2 sm:mb-3">
+          {currentAd.title}
+        </h3>
+        <p className="text-white/90 text-xs sm:text-sm mb-3 sm:mb-4 max-w-md">
+          {currentAd.description}
+        </p>
+        <Link
+          href={currentAd.link}
+          target="_blank"
+          className="inline-flex items-center gap-2 bg-white/90 backdrop-blur-sm text-primary px-3 py-1.5 sm:px-4 sm:py-2 rounded-full shadow-md hover:bg-white transition-colors duration-300 text-sm"
+        >
+          {currentAd.linkText}
+          <ChevronDown
+            size={16}
+            className="text-white w-3.5 h-3.5 sm:w-4 sm:h-4 rounded-full bg-primary"
+          />
+        </Link>
+      </div>
+
+      {/* Pagination Dots */}
+      <div className="absolute bottom-4 right-4 flex gap-1">
+        {advertisements.map((_, index) => (
+          <button
+            key={index}
+            onClick={() => goToAd(index)}
+            className={`w-2 h-2 rounded-full transition-all duration-300 ${
+              index === currentAdIndex
+                ? "bg-white w-4"
+                : "bg-white/50 hover:bg-white/70"
+            }`}
+            aria-label={`Go to advertisement ${index + 1}`}
+          />
+        ))}
+      </div>
+    </div>
+  );
+};
+
 // Hero Section
-const HeroSection = () => {
+const HeroSection = ({ isTabActive }: { isTabActive: boolean }) => {
   // Move state and effect outside of the render function
   const [showCar, setShowCar] = useState(true);
 
   useEffect(() => {
+    if (!isTabActive) return;
+
     const interval = setInterval(() => {
       setShowCar((prev) => !prev);
     }, 5000);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [isTabActive]);
 
   return (
     <section className="pt-2 sm:pt-3 md:pt-4">
       <MaxWidthWrapper className="px-2 sm:px-4">
         <div className="grid grid-cols-1 lg:grid-cols-12 sm:gap-6">
-          {/* Left Column - Advertisement Space */}
+          {/* Left Column - Advertisement Carousel */}
           <div className="lg:col-span-7 space-y-4 sm:space-y-6">
-            <div className="relative overflow-hidden rounded-xl sm:rounded-2xl shadow-sm group">
-              <Image
-                width={800}
-                height={420}
-                src={images.dashen.src || "/placeholder.svg"}
-                alt={images.dashen.alt}
-                className="w-full h-[320px] sm:h-[420px] object-cover transition-transform duration-500 group-hover:scale-105"
-                priority
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent"></div>
-              <div className="absolute bottom-0 left-0 p-4 sm:p-6 w-full">
-                <span className="bg-primary/90 text-white text-xs px-3 py-1 rounded-full backdrop-blur-sm">
-                  Featured Ad
-                </span>
-                <h3 className="text-white text-xl sm:text-2xl font-bold mt-2 mb-2 sm:mb-3">
-                  Dashen SuperApp
-                </h3>
-                <p className="text-white/90 text-xs sm:text-sm mb-3 sm:mb-4 max-w-md">
-                  Discover Ethiopian Best SuperApp. Special offers for early
-                  subscribers.
-                </p>
-                <Link
-                  href="https://www.dashensuperapp.com/"
-                  target="_blank"
-                  className="inline-flex items-center gap-2 bg-white/90 backdrop-blur-sm text-primary px-3 py-1.5 sm:px-4 sm:py-2 rounded-full shadow-md hover:bg-white transition-colors duration-300 text-sm"
-                >
-                  Learn More
-                  <ChevronDown
-                    size={16}
-                    className="text-white w-3.5 h-3.5 sm:w-4 sm:h-4 rounded-full bg-primary"
-                  />
-                </Link>
-              </div>
-            </div>
+            <AdvertisementCarousel isTabActive={isTabActive} />
 
             <div className="grid grid-cols-2 gap-3 sm:gap-6">
               <div className="relative overflow-hidden rounded-xl sm:rounded-2xl shadow-sm group">
                 <Image
                   width={400}
                   height={200}
-                  src={images.ad.src || "/placeholder.svg"}
-                  alt={images.ad.alt}
+                  src={images.dashen.src || "/placeholder.svg"}
+                  alt={images.dashen.alt}
                   className="w-full h-[150px] sm:h-[200px] object-cover transition-transform duration-500 group-hover:scale-105"
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent"></div>
                 <div className="absolute bottom-0 left-0 p-3 sm:p-4 w-full">
                   <Link
-                    href="/contact-us"
+                    href="https://www.dashensuperapp.com/"
                     target="_blank"
                     className="inline-flex items-center gap-1 bg-white/90 backdrop-blur-sm text-primary px-2 py-1 sm:px-3 sm:py-1.5 rounded-full text-xs sm:text-sm shadow-md hover:bg-white transition-colors duration-300"
                   >
-                    Contact Us
+                    Visit Dashen SuperApp
                   </Link>
                 </div>
               </div>
@@ -195,7 +323,7 @@ const HeroSection = () => {
                 >
                   <div className="absolute inset-0 bg-primary/20 rounded-full blur-xl"></div>
                   <Link
-                    href={showCar ? "/car" : "/house"}
+                    href={showCar ? "/car-for-sale" : "/house-for-rent"}
                     className="text-white hover:text-primary group-hover:text-primary relative flex items-center justify-center w-16 h-16 sm:w-20 sm:h-20 bg-transparent backdrop-blur-sm rounded-full shadow-lg border-2 border-white/80 group-hover:bg-white hover:bg-primary transition-colors duration-300"
                   >
                     <div className="text-center">
@@ -226,7 +354,7 @@ const HeroSection = () => {
 
                 <div className="flex gap-2 mt-2 sm:mt-0">
                   <Link
-                    href={showCar ? "/car" : "/house"}
+                    href={showCar ? "/car-for-sale" : "/house-for-rent"}
                     className="inline-flex items-center gap-1 bg-white/90 backdrop-blur-sm text-primary px-2 py-1 sm:px-3 sm:py-1.5 rounded-full text-xs sm:text-sm shadow-md hover:bg-white transition-colors duration-300"
                   >
                     Learn More
@@ -258,7 +386,7 @@ const HeroSection = () => {
 };
 
 // Featured Products Carousel
-const FeaturedProducts = () => {
+const FeaturedProducts = ({ isTabActive }: { isTabActive: boolean }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isHovering, setIsHovering] = useState(false);
 
@@ -351,18 +479,25 @@ const FeaturedProducts = () => {
 
   // Auto-scroll when not hovering
   useEffect(() => {
-    if (isHovering || totalProducts <= itemsToShow) return;
+    if (!isTabActive || isHovering || totalProducts <= itemsToShow) return;
 
     const interval = setInterval(() => {
       nextSlide();
     }, 4000);
 
     return () => clearInterval(interval);
-  }, [isHovering, currentIndex, itemsToShow, totalProducts, nextSlide]);
+  }, [
+    isTabActive,
+    isHovering,
+    currentIndex,
+    itemsToShow,
+    totalProducts,
+    nextSlide,
+  ]);
 
   // Format price with currency
-  const formatPrice = (price: number, currency: string = "ETB") => {
-    return `${currency} ${price.toLocaleString()}`;
+  const formatPrice = (price: number, currency: string | undefined) => {
+    return `${currency || "USD"} ${price.toLocaleString()}`;
   };
 
   return (
@@ -501,7 +636,7 @@ const FeaturedProducts = () => {
                               </span>
                             </div>
                             <span className="text-primary font-semibold text-sm sm:text-base">
-                              {formatPrice(product.price)}
+                              {formatPrice(product.price, product.currency)}
                             </span>
                           </div>
                         </div>
@@ -539,16 +674,18 @@ const FeaturedProducts = () => {
 };
 
 // Single Ad Banner Section
-const SingleAdSection = () => {
+const SingleAdSection = ({ isTabActive }: { isTabActive: boolean }) => {
   const [isFirstAd, setIsFirstAd] = useState(true);
 
   useEffect(() => {
+    if (!isTabActive) return;
+
     const interval = setInterval(() => {
       setIsFirstAd((prev) => !prev);
     }, 10000);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [isTabActive]);
 
   return (
     <section className="py-3 sm:py-4">
@@ -798,11 +935,54 @@ const WhyChooseUs = () => {
   );
 };
 
+const DATA_RECOVERY_NOTICE_KEY = "diplomat_data_recovery_notice_dismissed";
+
 // Announcement Banner Component
 export function AnnouncementBanner() {
+  const [showDataRecoveryNotice, setShowDataRecoveryNotice] = useState(true);
+
+  useEffect(() => {
+    try {
+      setShowDataRecoveryNotice(
+        localStorage.getItem(DATA_RECOVERY_NOTICE_KEY) !== "1"
+      );
+    } catch {
+      setShowDataRecoveryNotice(true);
+    }
+  }, []);
+
+  const dismissDataRecoveryNotice = () => {
+    try {
+      localStorage.setItem(DATA_RECOVERY_NOTICE_KEY, "1");
+    } catch {
+      /* ignore */
+    }
+    setShowDataRecoveryNotice(false);
+  };
+
+  if (showDataRecoveryNotice) {
+    return (
+      <div className="relative bg-red-50 border-b border-red-200/90 text-red-950 py-2.5 sm:py-3 pl-3 pr-11 sm:pr-12 text-center text-sm sm:text-base shadow-sm">
+        <p className="max-w-4xl mx-auto leading-snug font-medium">
+          Due to the ongoing war, both our clusters are hit in UAE-Central and
+          Bharine-South. You can add your listing as normal; we will try to get
+          our data back in the meantime.
+        </p>
+        <button
+          type="button"
+          onClick={dismissDataRecoveryNotice}
+          className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-red-800/80 hover:text-red-950 hover:bg-red-100/80 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-red-400 focus-visible:ring-offset-1"
+          aria-label="Dismiss notice"
+        >
+          <X className="h-4 w-4 sm:h-5 sm:w-5" aria-hidden />
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="bg-gradient-to-r from-white/90 to-white text-primary py-2 text-center italic font-medium relative overflow-hidden">
-      <div className="absolute inset-0 bg-[linear-gradient(45deg,transparent_25%,rgba(255,255,255,0.1)_50%,transparent_75%)] bg-[length:250%_250%] animate-shimmer"></div>
+      <div className="absolute inset-0 bg-[linear-gradient(45deg,transparent_25%,rgba(255,255,255,0.1)_50%,transparent_75%)] bg-[length:250%_250%] animate-shimmer" />
       <div className="relative z-10">The #1 Diplomatic Portal in Ethiopia!</div>
     </div>
   );
@@ -811,11 +991,13 @@ export function AnnouncementBanner() {
 // Home Component
 export default function Home() {
   const { isSignedIn, userId } = useAuth();
+  const isTabActive = useTabActive();
   const [showPhonePopup, setShowPhonePopup] = useState(false);
 
   useEffect(() => {
-    const checkUserPhone = async () => {
-      if (isSignedIn && userId) {
+    // Only check for phone number if user is signed in
+    if (isSignedIn && userId) {
+      const checkUserPhone = async () => {
         try {
           const response = await fetch(`/api/users?clerkId=${userId}`);
           if (!response.ok) {
@@ -831,25 +1013,27 @@ export default function Home() {
         } catch (error) {
           console.error("Error fetching user data:", error);
         }
-      }
-    };
+      };
 
-    checkUserPhone();
+      checkUserPhone();
+    }
   }, [isSignedIn, userId]);
 
   return (
     <div className="bg-white">
       <div className="px-1 sm:px-3 lg:px-5 xl:px-6 mx-auto">
-        <HeroSection />
-        <FeaturedProducts />
-        <SingleAdSection />
+        <HeroSection isTabActive={isTabActive} />
+        <FeaturedProducts isTabActive={isTabActive} />
+        <SingleAdSection isTabActive={isTabActive} />
         <WhyChooseUs />
         <ServicesSection />
       </div>
-      <PhoneNumberPopup
-        isOpen={showPhonePopup}
-        onClose={() => setShowPhonePopup(false)}
-      />
+      {isSignedIn && (
+        <PhoneNumberPopup
+          isOpen={showPhonePopup}
+          onClose={() => setShowPhonePopup(false)}
+        />
+      )}
     </div>
   );
 }

@@ -1,9 +1,9 @@
-import CardContainer from "@/components/car/card-container";
+import CarListings from "@/components/car/car-listings";
 
-export default function CarForRentPage() {
+export default function CarForRent() {
   return (
-    <main className="pt-20">
-      <CardContainer advertisementType="Rent" />
-    </main>
+    <div className="min-h-screen bg-gray-50">
+      <CarListings advertisementType="Rent" />
+    </div>
   );
 }

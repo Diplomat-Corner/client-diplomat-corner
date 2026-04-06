@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
+import { revalidateTag } from "next/cache";
 import { connectToDatabase } from "@/lib/db-connect";
+import { FEATURED_PRODUCTS_CACHE_TAG } from "@/lib/featured-cache-tag";
 import Review from "@/lib/models/review.model";
 import Car from "@/lib/models/car.model";
 import House from "@/lib/models/house.model";
@@ -121,6 +123,8 @@ export async function GET(request: Request) {
         });
       }
     }
+
+    revalidateTag(FEATURED_PRODUCTS_CACHE_TAG);
 
     // Return success message
     return NextResponse.json({
