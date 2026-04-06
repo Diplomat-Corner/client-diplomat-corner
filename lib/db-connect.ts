@@ -7,11 +7,12 @@ const DB_NAME = "diplomat-corner";
 interface MongooseCache {
   conn: mongoose.Connection | null;
   promise: Promise<mongoose.Connection> | null;
+  profilerConfigured: boolean;
 }
 
 const cached: MongooseCache = (
   global as unknown as { mongoose?: MongooseCache }
-).mongoose || { conn: null, promise: null };
+).mongoose || { conn: null, promise: null, profilerConfigured: false };
 
 export const connectToDatabase = async () => {
   if (cached.conn) {
@@ -38,6 +39,27 @@ export const connectToDatabase = async () => {
         });
 
     cached.conn = await cached.promise;
+
+    const slowMs = process.env.MONGO_PROFILE_SLOW_MS;
+    if (!cached.profilerConfigured && slowMs && slowMs !== "0") {
+      const slowms = Number(slowMs);
+      if (!Number.isNaN(slowms) && slowms > 0) {
+        try {
+          const db = cached.conn.db;
+          if (!db) {
+            throw new Error("No database handle on connection");
+          }
+          await db.command({ profile: 1, slowms });
+          cached.profilerConfigured = true;
+          dbLogger.info(
+            `MongoDB profiler enabled (level 1, slowms=${slowms}). Set MONGO_PROFILE_SLOW_MS=0 to disable on next deploy.`
+          );
+        } catch (e) {
+          dbLogger.warn("Could not enable MongoDB profiler:", e);
+        }
+      }
+    }
+
     return cached.conn;
   } catch (error) {
     dbLogger.error("Failed to connect to MongoDB:", error);

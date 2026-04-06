@@ -1,7 +1,10 @@
-import { NextResponse } from "next/server";
+import { auth } from "@clerk/nextjs/server";
+import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/db-connect";
 import Notification from "@/lib/models/notification.model";
 import { cache, CACHE_TTL, CACHE_TAGS, createCacheKey } from "@/lib/cache";
+import { withApiRoute, getClientIp } from "@/lib/api-observability";
+import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
 
 type PushSubscription = {
   endpoint: string;
@@ -11,15 +14,25 @@ type PushSubscription = {
   };
 };
 
-export async function GET(request: Request) {
-  try {
-    const { searchParams } = new URL(request.url);
-    const userId = searchParams.get("userId");
+export async function GET(req: NextRequest) {
+  return withApiRoute(req, async (innerReq) => {
+    const { userId } = await auth();
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const ip = getClientIp(innerReq);
+    const limited = checkRateLimit(`check-new:${ip}`, 90, 60_000);
+    if (!limited.ok) {
+      return rateLimitResponse(limited.retryAfterSec);
+    }
+
+    const { searchParams } = new URL(innerReq.url);
     const lastCheck = searchParams.get("lastCheck");
 
-    if (!userId || !lastCheck) {
+    if (!lastCheck) {
       return NextResponse.json(
-        { error: "Missing required parameters" },
+        { error: "Missing required parameter: lastCheck" },
         { status: 400 }
       );
     }
@@ -31,19 +44,19 @@ export async function GET(request: Request) {
 
     await connectToDatabase();
 
-    // Cache push-subscription lookup to reduce DB work on every poll.
     const subscriptionCacheKey = createCacheKey(
       CACHE_TAGS.NOTIFICATIONS,
       "pushSubscription",
       userId
     );
 
-    let pushSubscription = cache.get<PushSubscription>(subscriptionCacheKey);
+    let pushSubscription: PushSubscription | null | undefined =
+      cache.get<PushSubscription>(subscriptionCacheKey);
     if (!pushSubscription?.endpoint) {
       const userNotification = await Notification.findOne({ userId })
         .select("pushSubscription")
-        .lean();
-      pushSubscription = userNotification?.pushSubscription;
+        .lean<{ pushSubscription?: PushSubscription } | null>();
+      pushSubscription = userNotification?.pushSubscription ?? null;
 
       if (pushSubscription?.endpoint) {
         cache.set(subscriptionCacheKey, pushSubscription, {
@@ -53,7 +66,6 @@ export async function GET(request: Request) {
       }
     }
 
-    // Count new notifications
     const count = await Notification.countDocuments({
       userId,
       isRead: false,
@@ -62,7 +74,6 @@ export async function GET(request: Request) {
 
     const endpoint = pushSubscription?.endpoint;
 
-    // If there are new notifications and user has push subscription
     if (count > 0 && endpoint) {
       try {
         const response = await fetch(endpoint, {
@@ -94,11 +105,5 @@ export async function GET(request: Request) {
     }
 
     return NextResponse.json({ count });
-  } catch (error) {
-    console.error("Error checking new notifications:", error);
-    return NextResponse.json(
-      { error: "Failed to check new notifications" },
-      { status: 500 }
-    );
-  }
+  });
 }

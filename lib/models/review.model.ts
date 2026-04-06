@@ -40,6 +40,8 @@ const reviewSchema = new Schema(
   }
 );
 
+reviewSchema.index({ productId: 1 });
+
 const Review = models.Review || model("Review", reviewSchema);
 
 export default Review;

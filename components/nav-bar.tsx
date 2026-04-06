@@ -278,7 +278,8 @@ const NavBar: React.FC = () => {
     const checkNewNotifications = async () => {
       try {
         const response = await fetch(
-          `/api/notifications/check-new?userId=${user.id}&lastCheck=${lastCheckTime.current.toISOString()}`
+          `/api/notifications/check-new?lastCheck=${lastCheckTime.current.toISOString()}`,
+          { credentials: "same-origin" }
         );
 
         if (!response.ok) return;
