@@ -8,7 +8,6 @@ import { Button } from "./ui/button";
 import { useState, useEffect, useRef, useCallback } from "react";
 import MaxWidthWrapper from "./max-width-wrapper";
 import { Bell, Loader2, Menu, Search } from "lucide-react";
-import { useTabActive } from "@/hooks/use-tab-active";
 
 // Define the type for search results based on your API response
 interface SearchResult {
@@ -29,7 +28,6 @@ interface NavItem {
 
 const NavBar: React.FC = () => {
   const { user, isLoaded } = useUser();
-  const isTabActive = useTabActive();
   const [lastScrollY, setLastScrollY] = useState<number>(0);
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
@@ -42,8 +40,6 @@ const NavBar: React.FC = () => {
   const searchRef = useRef<HTMLDivElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const notificationCheckInterval = useRef<NodeJS.Timeout | null>(null);
-  const lastCheckTime = useRef<Date>(new Date());
 
   // Set up notification checking when user data loads
   useEffect(() => {
@@ -79,7 +75,6 @@ const NavBar: React.FC = () => {
           setUnreadNotifications(0);
           // Update localStorage
           localStorage.setItem("unreadNotificationsCount", "0");
-          lastCheckTime.current = new Date();
         }, 500);
       }
     };
@@ -266,115 +261,6 @@ const NavBar: React.FC = () => {
       type: "car",
     },
   ];
-
-  // Effect to setup notification polling and WebSocket connection
-  useEffect(() => {
-    // Define checkNewNotifications function inside useEffect
-    if (!isLoaded || !user || !isTabActive) return;
-
-    let wsConnected = false;
-    let wsOpenTimeout: NodeJS.Timeout | null = null;
-
-    const checkNewNotifications = async () => {
-      try {
-        const response = await fetch(
-          `/api/notifications/check-new?lastCheck=${lastCheckTime.current.toISOString()}`,
-          { credentials: "same-origin" }
-        );
-
-        if (!response.ok) return;
-
-        const data = await response.json();
-        if (data.count > 0) {
-          setUnreadNotifications(
-            (prev) => Number.parseInt(prev.toString()) + data.count
-          );
-
-          const event = new CustomEvent("unreadNotificationsUpdate", {
-            detail: { count: data.count },
-          });
-          window.dispatchEvent(event);
-
-          lastCheckTime.current = new Date();
-        }
-      } catch {
-        // Silently fail for notification checks
-      }
-    };
-
-    const handleNotificationUpdate = (event: {
-      detail?: { count: number };
-    }) => {
-      if (event.detail && typeof event.detail.count === "number") {
-        setUnreadNotifications(event.detail.count);
-      }
-    };
-
-    const stopPolling = () => {
-      if (notificationCheckInterval.current) {
-        clearInterval(notificationCheckInterval.current);
-        notificationCheckInterval.current = null;
-      }
-    };
-
-    const startPolling = () => {
-      if (notificationCheckInterval.current) return;
-
-      // Do one immediate check so badge is updated quickly.
-      checkNewNotifications();
-      notificationCheckInterval.current = setInterval(() => {
-        checkNewNotifications();
-      }, 30000);
-    };
-
-    // Connect to WebSocket for real-time notification updates.
-    // If WS doesn't connect quickly (or disconnects), start polling as fallback.
-    const socket = new WebSocket(
-      `${window.location.protocol === "https:" ? "wss" : "ws"}://${
-        window.location.host
-      }/api/ws`
-    );
-
-    socket.onopen = () => {
-      wsConnected = true;
-      if (wsOpenTimeout) clearTimeout(wsOpenTimeout);
-      stopPolling();
-    };
-
-    socket.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        if (
-          data.type === "notification" &&
-          user &&
-          data.userId === user.id
-        ) {
-          handleNotificationUpdate(data);
-        }
-      } catch {
-        // Ignore malformed WS payloads
-      }
-    };
-
-    const onWsFailure = () => {
-      if (wsOpenTimeout) clearTimeout(wsOpenTimeout);
-      if (!wsConnected) startPolling();
-    };
-
-    socket.onerror = onWsFailure;
-    socket.onclose = onWsFailure;
-
-    // Fallback timer: if WS fails to connect, don't wait forever.
-    wsOpenTimeout = setTimeout(() => {
-      if (!wsConnected) startPolling();
-    }, 5000);
-
-    return () => {
-      stopPolling();
-      if (wsOpenTimeout) clearTimeout(wsOpenTimeout);
-      socket.close();
-    };
-  }, [isLoaded, user, isTabActive]);
 
   const handleDropdownClick = (label: string) => {
     setActiveDropdown(activeDropdown === label ? null : label);
