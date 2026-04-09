@@ -90,10 +90,10 @@ export async function GET(request: Request) {
     for (const product of topProducts) {
       // Try to find in cars
       const car = await Car.findOne({ _id: product.productId }).lean();
-      if (car) {
+      if (car && !Array.isArray(car)) {
         featuredProducts.push({
-          _id: car._id,
-          productId: car._id,
+          _id: String(car._id),
+          productId: String(car._id),
           type: "car",
           name: car.name,
           price: car.price,
@@ -108,10 +108,10 @@ export async function GET(request: Request) {
 
       // Try to find in houses
       const house = await House.findOne({ _id: product.productId }).lean();
-      if (house) {
+      if (house && !Array.isArray(house)) {
         featuredProducts.push({
-          _id: house._id,
-          productId: house._id,
+          _id: String(house._id),
+          productId: String(house._id),
           type: "house",
           name: house.name,
           price: house.price,

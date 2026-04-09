@@ -6,11 +6,12 @@ import Notification from "@/lib/models/notification.model";
 
 export async function DELETE(
   request: Request,
-  { params }: { params: { reviewId: string } }
+  { params }: { params: Promise<{ reviewId: string }> }
 ) {
   try {
     await connectToDatabase();
     const { userId } = await auth();
+    const { reviewId } = await params;
 
     if (!userId) {
       return NextResponse.json(
@@ -19,7 +20,7 @@ export async function DELETE(
       );
     }
 
-    const review = await Review.findById(params.reviewId);
+    const review = await Review.findById(reviewId);
 
     if (!review) {
       return NextResponse.json({ error: "Review not found" }, { status: 404 });
@@ -49,7 +50,7 @@ export async function DELETE(
       }
     }
 
-    await Review.findByIdAndDelete(params.reviewId);
+    await Review.findByIdAndDelete(reviewId);
 
     return NextResponse.json({ success: true });
   } catch (error) {

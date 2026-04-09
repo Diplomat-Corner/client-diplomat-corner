@@ -5,12 +5,7 @@ import Payment from "@/lib/models/payment.model";
 import { auth } from "@clerk/nextjs/server";
 import { uploadImageToCPanel } from "@/lib/upload";
 import { apiLogger } from "@/lib/logger";
-
-interface RouteParams {
-  params: {
-    id: string;
-  };
-}
+import { buildClerkIdToSellerMap, type SellerPreview } from "@/lib/seller-preview";
 
 interface ApiResponse {
   success: boolean;
@@ -22,9 +17,9 @@ interface ApiResponse {
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
-  const id = params.id;
+  const { id } = await params;
 
   try {
     const userId = (await auth()).userId;
@@ -205,9 +200,9 @@ export async function PUT(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
-  const id = params.id;
+  const { id } = await params;
 
   try {
     const userId = (await auth()).userId;
@@ -255,12 +250,17 @@ export async function DELETE(
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
-  const id = params.id;
+  const { id } = await params;
 
   try {
     await connectToDatabase();
+
+    const { searchParams } = new URL(request.url);
+    const includeSeller =
+      searchParams.get("includeSeller") === "1" ||
+      searchParams.get("includeSeller") === "true";
 
     const car = await Car.findById(id);
     if (!car) {
@@ -270,7 +270,18 @@ export async function GET(
       );
     }
 
-    return NextResponse.json({ success: true, ...car.toObject() });
+    const base = { success: true as const, ...car.toObject() };
+    if (includeSeller && car.userId && car.userId !== "admin") {
+      const map = await buildClerkIdToSellerMap([car.userId]);
+      const seller = map.get(car.userId);
+      if (seller) {
+        return NextResponse.json({ ...base, seller } as typeof base & {
+          seller: SellerPreview;
+        });
+      }
+    }
+
+    return NextResponse.json(base);
   } catch (error) {
     apiLogger.error("Error fetching car:", error);
     return NextResponse.json(
