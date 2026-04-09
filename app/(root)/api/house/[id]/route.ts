@@ -4,6 +4,7 @@ import House from "@/lib/models/house.model";
 import { auth } from "@clerk/nextjs/server";
 import { uploadImageToCPanel } from "@/lib/upload";
 import { apiLogger } from "@/lib/logger";
+import { buildClerkIdToSellerMap, type SellerPreview } from "@/lib/seller-preview";
 
 interface ApiResponse {
   success: boolean;
@@ -15,10 +16,15 @@ interface ApiResponse {
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ): Promise<NextResponse<ApiResponse>> {
   try {
     const { id } = await params;
+    const { searchParams } = new URL(req.url);
+    const includeSeller =
+      searchParams.get("includeSeller") === "1" ||
+      searchParams.get("includeSeller") === "true";
+
     await connectToDatabase();
     const house = await House.findById(id);
 
@@ -29,7 +35,19 @@ export async function GET(
       );
     }
 
-    return NextResponse.json({ success: true, ...house.toObject() });
+    const base = { success: true as const, ...house.toObject() };
+    if (includeSeller && house.userId && house.userId !== "admin") {
+      const map = await buildClerkIdToSellerMap([house.userId]);
+      const seller = map.get(house.userId);
+      if (seller) {
+        return NextResponse.json({
+          ...base,
+          seller,
+        } as typeof base & { seller: SellerPreview });
+      }
+    }
+
+    return NextResponse.json(base);
   } catch (error) {
     apiLogger.error("Error fetching house:", error);
     return NextResponse.json(
@@ -41,7 +59,7 @@ export async function GET(
 
 export async function PUT(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ): Promise<NextResponse<ApiResponse>> {
   try {
     const { id } = await params;

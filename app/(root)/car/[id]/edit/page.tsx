@@ -1,7 +1,9 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { queryKeys } from "@/lib/query-keys";
 import ManageCar from "@/components/manage-car";
 import { useUser } from "@clerk/nextjs";
 import { ICar } from "@/lib/models/car.model";
@@ -18,39 +20,40 @@ export default function EditCarPage() {
   const { id } = useParams();
   const { user, isLoaded } = useUser();
   const router = useRouter();
-  const [car, setCar] = useState<ICar | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [permissionDenied, setPermissionDenied] = useState(false);
 
-  useEffect(() => {
-    const fetchCar = async () => {
-      try {
-        const response = await fetch(`/api/cars/${id}`);
-        const data = await response.json();
-
-        if (!response.ok) {
-          throw new Error(data.error || "Failed to fetch car");
-        }
-
-        // Check if the current user owns this car
-        if (data.userId !== user?.id) {
-          setPermissionDenied(true);
-          return;
-        }
-
-        setCar(data);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to fetch car");
-      } finally {
-        setLoading(false);
+  const {
+    data: raw,
+    isPending: loading,
+    error: queryError,
+    isError,
+  } = useQuery({
+    queryKey: queryKeys.carById(String(id), { includeSeller: false }),
+    queryFn: async () => {
+      const response = await fetch(`/api/cars/${id}`);
+      const data = (await response.json()) as { success?: boolean; error?: string } & ICar;
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to fetch car");
       }
-    };
+      return data;
+    },
+    enabled: !!id && !!user,
+  });
 
-    if (id && user) {
-      fetchCar();
-    }
-  }, [id, user]);
+  const permissionDenied = Boolean(
+    raw && user && raw.userId && raw.userId !== user.id
+  );
+
+  const car = useMemo(() => {
+    if (!raw || !user) return null;
+    if (raw.userId !== user.id) return null;
+    const { success: _s, error: _e, ...rest } = raw as {
+      success?: boolean;
+      error?: string;
+    } & ICar;
+    return rest as ICar;
+  }, [raw, user]);
+
+  const error = isError ? (queryError as Error).message : null;
 
   useEffect(() => {
     if (isLoaded && !user) {

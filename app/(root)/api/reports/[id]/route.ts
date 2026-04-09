@@ -8,10 +8,11 @@ import Notification from "@/lib/models/notification.model";
 // GET a specific report by ID (admin only)
 export async function GET(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     await connectToDatabase();
+    const { id } = await params;
 
     // Verify user is authenticated
     const { userId } = await auth();
@@ -29,7 +30,7 @@ export async function GET(
     }
 
     // Find the report
-    const report = await Report.findById(params.id);
+    const report = await Report.findById(id);
     if (!report) {
       return NextResponse.json({ error: "Report not found" }, { status: 404 });
     }
@@ -47,10 +48,11 @@ export async function GET(
 // PUT update a report status (admin only)
 export async function PUT(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     await connectToDatabase();
+    const { id } = await params;
 
     // Verify user is authenticated
     const { userId } = await auth();
@@ -81,7 +83,7 @@ export async function PUT(
     }
 
     // Find the report
-    const report = await Report.findById(params.id);
+    const report = await Report.findById(id);
     if (!report) {
       return NextResponse.json({ error: "Report not found" }, { status: 404 });
     }
@@ -121,10 +123,11 @@ export async function PUT(
 // DELETE a report (admin only)
 export async function DELETE(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     await connectToDatabase();
+    const { id } = await params;
 
     // Verify user is authenticated
     const { userId } = await auth();
@@ -142,7 +145,7 @@ export async function DELETE(
     }
 
     // Find and delete the report
-    const report = await Report.findByIdAndDelete(params.id);
+    const report = await Report.findByIdAndDelete(id);
     if (!report) {
       return NextResponse.json({ error: "Report not found" }, { status: 404 });
     }

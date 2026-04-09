@@ -4,11 +4,25 @@ import House, { IHouse } from "@/lib/models/house.model";
 import { connectToDatabase } from "@/lib/db-connect";
 import { apiLogger } from "@/lib/logger";
 import { cache, CACHE_TTL, CACHE_TAGS, createCacheKey } from "@/lib/cache";
+import {
+  attachSellerToRecord,
+  buildClerkIdToSellerMap,
+  type SellerPreview,
+} from "@/lib/seller-preview";
+
+/** Aligns with server cache + React Query; anonymous list/browse only. */
+const PUBLIC_LIST_CACHE_HEADERS = {
+  "Cache-Control": "public, s-maxage=60, stale-while-revalidate=120",
+};
+
+const PRIVATE_USER_LIST_HEADERS = {
+  "Cache-Control": "private, no-store",
+};
 
 interface ApiResponse {
   success: boolean;
   error?: string;
-  houses?: IHouse[];
+  houses?: (IHouse & { seller?: SellerPreview })[];
   pagination?: {
     total: number;
     page: number;
@@ -27,6 +41,9 @@ export async function GET(
     const advertisementType = searchParams.get("advertisementType");
     const userId = searchParams.get("userId");
     const excludeUserId = searchParams.get("excludeUserId");
+    const includeSeller =
+      searchParams.get("includeSeller") === "1" ||
+      searchParams.get("includeSeller") === "true";
 
     const cacheKey = createCacheKey(
       CACHE_TAGS.HOUSES,
@@ -35,12 +52,15 @@ export async function GET(
       limit,
       advertisementType,
       userId,
-      excludeUserId
+      excludeUserId,
+      includeSeller ? "incSeller" : "noSeller"
     );
 
     const cachedResponse = cache.get<ApiResponse>(cacheKey);
     if (cachedResponse && !userId) {
-      return NextResponse.json(cachedResponse);
+      return NextResponse.json(cachedResponse, {
+        headers: PUBLIC_LIST_CACHE_HEADERS,
+      });
     }
 
     await connectToDatabase();
@@ -68,30 +88,44 @@ export async function GET(
       const houses = await House.find(query).sort({ createdAt: -1 });
       const total = houses.length;
 
-      return NextResponse.json({
-        success: true,
-        houses: houses.map((house) => house.toObject()),
-        pagination: {
-          total,
-          page: 1,
-          limit: total,
-          hasMore: false,
+      return NextResponse.json(
+        {
+          success: true,
+          houses: houses.map((house) => house.toObject()),
+          pagination: {
+            total,
+            page: 1,
+            limit: total,
+            hasMore: false,
+          },
         },
-      });
+        { headers: PRIVATE_USER_LIST_HEADERS }
+      );
     }
 
     const skip = (page - 1) * limit;
     const total = await House.countDocuments(query);
-    const houses = await House.find(query)
+    const housesRaw = await House.find(query)
       .sort({ createdAt: -1 })
       .skip(skip)
-      .limit(limit);
+      .limit(limit)
+      .lean<IHouse[]>();
 
-    const hasMore = skip + houses.length < total;
+    let housesPlain: (IHouse & { seller?: SellerPreview })[] = housesRaw as (IHouse & {
+      seller?: SellerPreview;
+    })[];
+    if (includeSeller && housesPlain.length > 0) {
+      const sellerMap = await buildClerkIdToSellerMap(
+        housesPlain.map((h) => h.userId).filter(Boolean)
+      );
+      housesPlain = housesPlain.map((h) => attachSellerToRecord(h, sellerMap));
+    }
+
+    const hasMore = skip + housesPlain.length < total;
 
     const response: ApiResponse = {
       success: true,
-      houses: houses.map((house) => house.toObject()),
+      houses: housesPlain,
       pagination: {
         page,
         limit,
@@ -105,7 +139,9 @@ export async function GET(
       tags: [CACHE_TAGS.HOUSES],
     });
 
-    return NextResponse.json(response);
+    return NextResponse.json(response, {
+      headers: PUBLIC_LIST_CACHE_HEADERS,
+    });
   } catch (error) {
     apiLogger.error("Error in houses API:", error);
     return NextResponse.json(

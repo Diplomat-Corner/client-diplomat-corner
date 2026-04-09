@@ -6,7 +6,7 @@ import { NextResponse } from "next/server";
 // Get specific user by ID
 export async function GET(
   req: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     await connectToDatabase();
@@ -55,7 +55,7 @@ export async function GET(
 // Update specific user by ID - requires authentication
 export async function PATCH(
   req: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { userId } = await auth();
@@ -68,7 +68,7 @@ export async function PATCH(
 
     await connectToDatabase();
 
-    const { id } = params;
+    const { id } = await params;
     const userData = await req.json();
 
     // Check if id is a valid MongoDB ObjectId or a clerkId
@@ -124,7 +124,7 @@ export async function PATCH(
 // Delete specific user by ID - requires authentication
 export async function DELETE(
   req: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { userId } = await auth();
@@ -137,7 +137,7 @@ export async function DELETE(
 
     await connectToDatabase();
 
-    const { id } = params;
+    const { id } = await params;
 
     // Check if id is a valid MongoDB ObjectId or a clerkId
     const isObjectId = /^[0-9a-fA-F]{24}$/.test(id);

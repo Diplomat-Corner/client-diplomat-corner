@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useMutation } from '@tanstack/react-query';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,7 +26,6 @@ export function ContactSellerDialog({
   sellerId,
 }: ContactSellerDialogProps) {
   const { toast } = useToast();
-  const [isLoading, setIsLoading] = useState(false);
   const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
@@ -43,11 +43,8 @@ export function ContactSellerDialog({
     }));
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsLoading(true);
-
-    try {
+  const sendMessageMutation = useMutation({
+    mutationFn: async () => {
       const response = await fetch('/api/messages', {
         method: 'POST',
         headers: {
@@ -66,25 +63,32 @@ export function ContactSellerDialog({
       if (!response.ok) {
         throw new Error(data.message || 'Failed to send message');
       }
-
+      return data;
+    },
+    onSuccess: () => {
       toast({
         title: "Message Sent",
         description: "Your inquiry has been sent successfully!",
         variant: "default",
       });
-      
       onClose();
-    } catch (error) {
+    },
+    onError: (error) => {
       console.error('Error sending message:', error);
       toast({
         title: "Error",
         description: "Failed to send message. Please try again.",
         variant: "destructive",
       });
-    } finally {
-      setIsLoading(false);
-    }
+    },
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    sendMessageMutation.mutate();
   };
+
+  const isLoading = sendMessageMutation.isPending;
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>

@@ -6,11 +6,12 @@ import { auth } from "@clerk/nextjs/server";
 
 export async function POST(
   request: Request,
-  { params }: { params: { reviewId: string } }
+  { params }: { params: Promise<{ reviewId: string }> }
 ) {
   try {
     await connectToDatabase();
     const { userId } = await auth();
+    const { reviewId } = await params;
 
     if (!userId) {
       return NextResponse.json(
@@ -19,7 +20,7 @@ export async function POST(
       );
     }
 
-    const review = await Review.findById(params.reviewId);
+    const review = await Review.findById(reviewId);
 
     if (!review) {
       return NextResponse.json({ error: "Review not found" }, { status: 404 });

@@ -1,3 +1,4 @@
+import "@/lib/ensure-localStorage-polyfill-init";
 import "./globals.css";
 import { Inter } from "next/font/google";
 import type { Metadata } from "next";
@@ -5,6 +6,7 @@ import { ClerkProvider } from "@clerk/nextjs";
 import "react-phone-number-input/style.css";
 import { Suspense } from "react";
 import LoadingComponent from "@/components/ui/loading-component";
+import { QueryProvider } from "@/components/providers/query-provider";
 import Script from "next/script";
 
 const inter = Inter({ subsets: ["latin"] });
@@ -47,7 +49,7 @@ export default function RootLayout({
               },
             }}
           >
-            {children}
+            <QueryProvider>{children}</QueryProvider>
           </ClerkProvider>
         </Suspense>
       </body>

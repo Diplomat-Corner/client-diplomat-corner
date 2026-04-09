@@ -1,7 +1,7 @@
 "use client";
 
-import { sendNotification } from "@/lib/actions/notification.actions";
 import React, { FormEvent, useEffect, useState, useRef } from "react";
+import { useMutation } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import { useParams } from "next/navigation";
 import { useAuth, useUser } from "@clerk/nextjs";
@@ -13,7 +13,6 @@ import {
   Loader2,
   CheckCircle,
 } from "lucide-react";
-import { EmailAddress } from "@clerk/nextjs/server";
 
 interface ContactSellerDialogProps {
   isOpen: boolean;
@@ -30,7 +29,6 @@ const ContactSellerDialog: React.FC<ContactSellerDialogProps> = ({
 }) => {
   const [phoneNumber, setPhoneNumber] = useState<string>("");
   const [description, setDescription] = useState<string>("");
-  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [isSubmitted, setIsSubmitted] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -64,36 +62,15 @@ const ContactSellerDialog: React.FC<ContactSellerDialogProps> = ({
     return phoneRegex.test(phone);
   };
 
-  // Handle form submission
-  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
+  const contactMutation = useMutation({
+    mutationFn: async () => {
+      if (!userId) {
+        throw new Error("You must be logged in to contact sellers");
+      }
+      if (!productId) {
+        throw new Error("Invalid product ID");
+      }
 
-    // Client-side validation
-    if (!userId) {
-      setError("You must be logged in to contact sellers");
-      return;
-    }
-
-    if (!productId) {
-      setError("Invalid product ID");
-      return;
-    }
-
-    if (!validatePhoneNumber(phoneNumber)) {
-      setError("Please enter a valid phone number (minimum 10 digits)");
-      return;
-    }
-
-    if (!description.trim()) {
-      setError("Please enter a message");
-      return;
-    }
-
-    setIsSubmitting(true);
-    setError(null);
-
-    try {
-      // Fetch product details to get seller's user ID
       const productResponse = await fetch(
         `/api/${productType === "car" ? "cars" : "house"}/${productId}`
       );
@@ -111,7 +88,6 @@ const ContactSellerDialog: React.FC<ContactSellerDialogProps> = ({
         throw new Error("Seller information not found");
       }
 
-      // Create a new request
       const requestResponse = await fetch("/api/requests", {
         method: "POST",
         headers: {
@@ -131,15 +107,12 @@ const ContactSellerDialog: React.FC<ContactSellerDialogProps> = ({
         throw new Error(`Failed to create request: ${requestResponse.status}`);
       }
 
-      // Send notifications using direct API route
       if (productType === "car" || productType === "house") {
-        // Get seller's push subscription
         const sellerSubscriptionResponse = await fetch(
           `/api/notifications?userId=${toUserId}`
         );
         const sellerSubscription = await sellerSubscriptionResponse.json();
 
-        // Send notification to seller
         const sellerNotificationResponse = await fetch("/api/notifications", {
           method: "POST",
           headers: {
@@ -162,10 +135,8 @@ const ContactSellerDialog: React.FC<ContactSellerDialogProps> = ({
         if (!sellerNotificationResponse.ok) {
           console.warn("Failed to send notification to seller");
         } else {
-          // Get the created notification data
           const notificationData = await sellerNotificationResponse.json();
 
-          // Only send push notification if we have a subscription
           if (sellerSubscription?.pushSubscription) {
             try {
               await fetch(sellerSubscription.pushSubscription.endpoint, {
@@ -196,13 +167,11 @@ const ContactSellerDialog: React.FC<ContactSellerDialogProps> = ({
           }
         }
 
-        // Get buyer's push subscription
         const buyerSubscriptionResponse = await fetch(
           `/api/notifications?userId=${userId}`
         );
         const buyerSubscription = await buyerSubscriptionResponse.json();
 
-        // Send notification to buyer
         const buyerNotificationResponse = await fetch("/api/notifications", {
           method: "POST",
           headers: {
@@ -221,10 +190,8 @@ const ContactSellerDialog: React.FC<ContactSellerDialogProps> = ({
         if (!buyerNotificationResponse.ok) {
           console.warn("Failed to send notification to buyer");
         } else {
-          // Get the created notification data
           const notificationData = await buyerNotificationResponse.json();
 
-          // Only send push notification if we have a subscription
           if (buyerSubscription?.pushSubscription) {
             try {
               await fetch(buyerSubscription.pushSubscription.endpoint, {
@@ -253,9 +220,9 @@ const ContactSellerDialog: React.FC<ContactSellerDialogProps> = ({
           }
         }
       }
-
+    },
+    onSuccess: () => {
       setIsSubmitted(true);
-
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current);
       }
@@ -263,15 +230,44 @@ const ContactSellerDialog: React.FC<ContactSellerDialogProps> = ({
         setIsSubmitted(false);
         onClose();
       }, 3000);
-    } catch (err: unknown) {
+    },
+    onError: (err: unknown) => {
       setError(
         err instanceof Error
           ? err.message
           : "Failed to send your message. Please try again."
       );
-    } finally {
-      setIsSubmitting(false);
+    },
+  });
+
+  const isSubmitting = contactMutation.isPending;
+
+  // Handle form submission
+  const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+
+    if (!userId) {
+      setError("You must be logged in to contact sellers");
+      return;
     }
+
+    if (!productId) {
+      setError("Invalid product ID");
+      return;
+    }
+
+    if (!validatePhoneNumber(phoneNumber)) {
+      setError("Please enter a valid phone number (minimum 10 digits)");
+      return;
+    }
+
+    if (!description.trim()) {
+      setError("Please enter a message");
+      return;
+    }
+
+    setError(null);
+    contactMutation.mutate();
   };
 
   // Product type specific details

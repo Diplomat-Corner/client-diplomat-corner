@@ -26,9 +26,10 @@ import {
 } from "lucide-react";
 import { useCallback } from "react";
 import { useAuth } from "@clerk/nextjs";
+import { useQuery } from "@tanstack/react-query";
 import { PhoneNumberPopup } from "@/components/PhoneNumberPopup";
-import User from "@/lib/models/user.model";
 import { useTabActive } from "@/hooks/use-tab-active";
+import { queryKeys } from "@/lib/query-keys";
 
 // Dynamic Advertisement Component
 const AdvertPlaceholder = ({
@@ -414,40 +415,25 @@ const FeaturedProducts = ({ isTabActive }: { isTabActive: boolean }) => {
     houseType?: "House" | "Apartment" | "Guest House";
   };
 
-  const [featuredProducts, setFeaturedProducts] = useState<FeaturedProduct[]>(
-    []
-  );
-  const [loading, setLoading] = useState(true);
   const carouselRef = useRef<HTMLDivElement>(null);
+
+  const { data: featuredProducts = [], isPending: loading } = useQuery({
+    queryKey: queryKeys.featuredProducts(),
+    queryFn: async () => {
+      const response = await fetch("/api/featured-products");
+      if (!response.ok) {
+        throw new Error("Failed to fetch featured products");
+      }
+      return response.json() as Promise<FeaturedProduct[]>;
+    },
+    staleTime: 5 * 60 * 1000,
+  });
 
   const totalProducts = featuredProducts.length;
   const productsPerView = { mobile: 1, tablet: 2, desktop: 4 };
 
   // Determine how many products to show based on screen size
   const [itemsToShow, setItemsToShow] = useState(productsPerView.desktop);
-
-  // Fetch featured products
-  useEffect(() => {
-    const fetchFeaturedProducts = async () => {
-      try {
-        setLoading(true);
-        const response = await fetch("/api/featured-products");
-
-        if (!response.ok) {
-          throw new Error("Failed to fetch featured products");
-        }
-
-        const data = await response.json();
-        setFeaturedProducts(data);
-      } catch (error) {
-        console.error("Error fetching featured products:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchFeaturedProducts();
-  }, []);
 
   useEffect(() => {
     const handleResize = () => {
@@ -486,14 +472,7 @@ const FeaturedProducts = ({ isTabActive }: { isTabActive: boolean }) => {
     }, 4000);
 
     return () => clearInterval(interval);
-  }, [
-    isTabActive,
-    isHovering,
-    currentIndex,
-    itemsToShow,
-    totalProducts,
-    nextSlide,
-  ]);
+  }, [isTabActive, isHovering, itemsToShow, totalProducts, nextSlide]);
 
   // Format price with currency
   const formatPrice = (price: number, currency: string | undefined) => {
@@ -990,34 +969,32 @@ export function AnnouncementBanner() {
 
 // Home Component
 export default function Home() {
-  const { isSignedIn, userId } = useAuth();
+  const { isSignedIn, userId, isLoaded } = useAuth();
   const isTabActive = useTabActive();
   const [showPhonePopup, setShowPhonePopup] = useState(false);
 
+  const { data: phoneCheckUser } = useQuery({
+    queryKey: queryKeys.currentUserByClerk(userId ?? undefined),
+    queryFn: async () => {
+      const response = await fetch(`/api/users?clerkId=${userId}`);
+      if (!response.ok) {
+        throw new Error("Failed to fetch user data");
+      }
+      const data = await response.json();
+      return data.users?.[0] as { phoneNumber?: string } | undefined;
+    },
+    enabled: isLoaded && isSignedIn && !!userId,
+    staleTime: 60_000,
+  });
+
   useEffect(() => {
-    // Only check for phone number if user is signed in
-    if (isSignedIn && userId) {
-      const checkUserPhone = async () => {
-        try {
-          const response = await fetch(`/api/users?clerkId=${userId}`);
-          if (!response.ok) {
-            throw new Error("Failed to fetch user data");
-          }
-          const data = await response.json();
-          const user = data.users?.[0];
-
-          // Show popup if user exists but doesn't have a phone number
-          if (user && (!user.phoneNumber || user.phoneNumber === "")) {
-            setShowPhonePopup(true);
-          }
-        } catch (error) {
-          console.error("Error fetching user data:", error);
-        }
-      };
-
-      checkUserPhone();
+    if (
+      phoneCheckUser &&
+      (!phoneCheckUser.phoneNumber || phoneCheckUser.phoneNumber === "")
+    ) {
+      setShowPhonePopup(true);
     }
-  }, [isSignedIn, userId]);
+  }, [phoneCheckUser]);
 
   return (
     <div className="bg-white">

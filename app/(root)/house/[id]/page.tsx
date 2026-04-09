@@ -1,7 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
+import { queryKeys } from "@/lib/query-keys";
+import type { SellerPreview } from "@/lib/seller-preview";
 import Image from "next/image";
 import {
   Bed,
@@ -35,54 +38,71 @@ const paymentMethodLabels: Record<string, string> = {
   Annual: "Annual",
 };
 
+type HouseDetailApi = IHouse & { success: boolean; seller?: SellerPreview };
+
 export default function HouseDetails() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const id = params.id as string;
-  const [house, setHouse] = useState<IHouse | null>(null);
-  const [user, setUser] = useState<IUser | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
 
   // State for image carousel
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
-  const [imageUrls, setImageUrls] = useState<string[]>([]);
+
+  const {
+    data: raw,
+    isPending: loading,
+    error: queryError,
+    isError,
+  } = useQuery({
+    queryKey: queryKeys.houseById(id, { includeSeller: true }),
+    queryFn: async () => {
+      const response = await fetch(`/api/house/${id}?includeSeller=1`);
+      const data = (await response.json()) as HouseDetailApi;
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      if (!data.success) {
+        throw new Error("House not found");
+      }
+      return data;
+    },
+    enabled: !!id,
+  });
+
+  const house = useMemo<IHouse | null>(() => {
+    if (!raw) return null;
+    const { success: _s, seller: _seller, ...rest } = raw;
+    return rest as IHouse;
+  }, [raw]);
+
+  const user = useMemo<IUser | null>(() => {
+    if (!raw?.seller) return null;
+    const s = raw.seller;
+    return {
+      clerkId: raw.userId,
+      firstName: s.firstName,
+      lastName: s.lastName ?? "",
+      email: "",
+      imageUrl: s.imageUrl,
+      phoneNumber: s.phoneNumber ?? "",
+      role: s.role,
+      address: "",
+      timestamp: "",
+    } as IUser;
+  }, [raw]);
+
+  const imageUrls = useMemo(() => {
+    if (!house) return [];
+    if (house.imageUrls && house.imageUrls.length > 0) return house.imageUrls;
+    if (house.imageUrl) return [house.imageUrl];
+    return ["/c.jpg"];
+  }, [house]);
+
+  const error = isError ? (queryError as Error).message : null;
 
   useEffect(() => {
-    const fetchHouseAndUser = async () => {
-      try {
-        const response = await fetch(`/api/house/${id}`);
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        const data = await response.json();
-        setHouse(data);
-
-        // Fetch user data if house exists
-        if (data.userId) {
-          const userResponse = await fetch(`/api/users/${data.userId}`);
-          if (userResponse.ok) {
-            const userData = await userResponse.json();
-            setUser(userData.user);
-          }
-        }
-
-        // Set up image URLs array
-        if (data.imageUrls && data.imageUrls.length > 0) {
-          setImageUrls(data.imageUrls);
-        } else if (data.imageUrl) {
-          setImageUrls([data.imageUrl]);
-        } else {
-          setImageUrls(["/c.jpg"]); // Default image
-        }
-      } catch (err) {
-        setError((err as Error).message);
-      } finally {
-        setLoading(false);
-      }
-    };
-    if (id) fetchHouseAndUser();
+    setCurrentImageIndex(0);
   }, [id]);
 
   const nextImage = () => {

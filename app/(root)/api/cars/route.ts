@@ -6,6 +6,11 @@ import { auth } from "@clerk/nextjs/server";
 import { v4 as uuidv4 } from "uuid";
 import { uploadLogger, apiLogger } from "@/lib/logger";
 import { cache, CACHE_TTL, CACHE_TAGS, createCacheKey } from "@/lib/cache";
+import {
+  attachSellerToRecord,
+  buildClerkIdToSellerMap,
+  type SellerPreview,
+} from "@/lib/seller-preview";
 
 /** Prefer server-only vars; fall back to NEXT_PUBLIC for existing deployments. */
 const CPANEL_API_URL =
@@ -17,13 +22,22 @@ const CPANEL_API_TOKEN =
 const PUBLIC_DOMAIN =
   process.env.PUBLIC_DOMAIN ?? process.env.NEXT_PUBLIC_PUBLIC_DOMAIN;
 
+/** Aligns with React Query staleTime; safe for anonymous list/browse responses only. */
+const PUBLIC_LIST_CACHE_HEADERS = {
+  "Cache-Control": "public, s-maxage=60, stale-while-revalidate=120",
+};
+
+const PRIVATE_USER_LIST_HEADERS = {
+  "Cache-Control": "private, no-store",
+};
+
 interface ApiResponse {
   success: boolean;
   error?: string;
   message?: string;
   carId?: string;
   paymentId?: string;
-  cars?: ICar[];
+  cars?: (ICar & { seller?: SellerPreview })[];
   pagination?: {
     total: number;
     page: number;
@@ -121,6 +135,9 @@ export async function GET(
     const userId = searchParams.get("userId");
     const excludeUserId = searchParams.get("excludeUserId");
     const advertisementType = searchParams.get("advertisementType");
+    const includeSeller =
+      searchParams.get("includeSeller") === "1" ||
+      searchParams.get("includeSeller") === "true";
 
     const cacheKey = createCacheKey(
       CACHE_TAGS.CARS,
@@ -129,12 +146,15 @@ export async function GET(
       limit,
       userId,
       excludeUserId,
-      advertisementType
+      advertisementType,
+      includeSeller ? "incSeller" : "noSeller"
     );
 
     const cachedResponse = cache.get<ApiResponse>(cacheKey);
     if (cachedResponse && !userId) {
-      return NextResponse.json(cachedResponse);
+      return NextResponse.json(cachedResponse, {
+        headers: PUBLIC_LIST_CACHE_HEADERS,
+      });
     }
 
     await connectToDatabase();
@@ -158,24 +178,38 @@ export async function GET(
       const cars = await Car.find(query).sort({ createdAt: -1 });
       const total = cars.length;
 
-      return NextResponse.json({
-        success: true,
-        cars,
-        pagination: {
-          total,
-          page: 1,
-          limit: total,
-          hasMore: false,
+      return NextResponse.json(
+        {
+          success: true,
+          cars,
+          pagination: {
+            total,
+            page: 1,
+            limit: total,
+            hasMore: false,
+          },
         },
-      });
+        { headers: PRIVATE_USER_LIST_HEADERS }
+      );
     }
 
     const skip = (page - 1) * limit;
     const total = await Car.countDocuments(query);
-    const cars = await Car.find(query)
+    const carsRaw = await Car.find(query)
       .sort({ createdAt: -1 })
       .skip(skip)
-      .limit(limit);
+      .limit(limit)
+      .lean<ICar[]>();
+
+    let cars: (ICar & { seller?: SellerPreview })[] = carsRaw as (ICar & {
+      seller?: SellerPreview;
+    })[];
+    if (includeSeller && cars.length > 0) {
+      const sellerMap = await buildClerkIdToSellerMap(
+        cars.map((c) => c.userId).filter(Boolean)
+      );
+      cars = cars.map((c) => attachSellerToRecord(c, sellerMap));
+    }
 
     const response: ApiResponse = {
       success: true,
@@ -193,7 +227,9 @@ export async function GET(
       tags: [CACHE_TAGS.CARS],
     });
 
-    return NextResponse.json(response);
+    return NextResponse.json(response, {
+      headers: PUBLIC_LIST_CACHE_HEADERS,
+    });
   } catch (error) {
     apiLogger.error("Error fetching cars:", error);
     return NextResponse.json(
