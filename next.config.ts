@@ -1,60 +1,5 @@
 import type { NextConfig } from "next";
 
-/**
- * Node can install a broken global `localStorage` when experimental Web Storage is
- * on but `--localstorage-file` is missing or invalid (common on Node 25+). Code
- * that touches `localStorage` during SSR (e.g. Clerk) then throws:
- * `localStorage.getItem is not a function`.
- *
- * This runs as soon as Next loads the config in the Node server process, before
- * request handling.
- */
-function patchBrokenNodeLocalStorage(): void {
-  if (typeof globalThis === "undefined") {
-    return;
-  }
-  const g = globalThis as typeof globalThis & { localStorage?: Storage };
-  const current = g.localStorage;
-  if (current == null || typeof current.getItem === "function") {
-    return;
-  }
-
-  const memory = new Map<string, string>();
-  const memoryStorage: Storage = {
-    get length() {
-      return memory.size;
-    },
-    clear() {
-      memory.clear();
-    },
-    getItem(key) {
-      return memory.get(String(key)) ?? null;
-    },
-    setItem(key, value) {
-      memory.set(String(key), String(value));
-    },
-    removeItem(key) {
-      memory.delete(String(key));
-    },
-    key(index) {
-      return Array.from(memory.keys())[index] ?? null;
-    },
-  };
-
-  try {
-    Object.defineProperty(g, "localStorage", {
-      value: memoryStorage,
-      configurable: true,
-      enumerable: true,
-      writable: true,
-    });
-  } catch {
-    g.localStorage = memoryStorage;
-  }
-}
-
-patchBrokenNodeLocalStorage();
-
 const nextConfig: NextConfig = {
   async redirects() {
     return [
@@ -83,6 +28,14 @@ const nextConfig: NextConfig = {
   },
   typescript: {
     ignoreBuildErrors: true,
+  },
+  // Quiets webpack cache serialization noise for large string literals (dev/build).
+  webpack: (config) => {
+    config.ignoreWarnings = [
+      ...(config.ignoreWarnings ?? []),
+      /Serializing big strings/,
+    ];
+    return config;
   },
 };
 
