@@ -1,7 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
+import { queryKeys } from "@/lib/query-keys";
+import type { SellerPreview } from "@/lib/seller-preview";
 import Image from "next/image";
 import {
   CarFront,
@@ -31,55 +34,71 @@ const paymentMethodLabels: Record<string, string> = {
   Annually: "Annually",
 };
 
+type CarDetailApi = ICar & { success: boolean; seller?: SellerPreview };
+
 export default function CarDetails() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const id = params.id as string;
-  const [car, setCar] = useState<ICar | null>(null);
-  const [user, setUser] = useState<IUser | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
 
   // State for image carousel
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
-  const [imageUrls, setImageUrls] = useState<string[]>([]);
-  console.log(user);
-  console.log(user?.phoneNumber);
-  useEffect(() => {
-    const fetchCarAndUser = async () => {
-      try {
-        const response = await fetch(`/api/cars/${id}`);
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        const data = await response.json();
-        setCar(data);
 
-        // Fetch user data if car exists
-        if (data.userId) {
-          const userResponse = await fetch(`/api/users/${data.userId}`);
-          if (userResponse.ok) {
-            const userData = await userResponse.json();
-            setUser(userData.user);
-          }
-        }
-
-        // Set up image URLs array
-        if (data.imageUrls && data.imageUrls.length > 0) {
-          setImageUrls(data.imageUrls);
-        } else if (data.imageUrl) {
-          setImageUrls([data.imageUrl]);
-        } else {
-          setImageUrls(["/car.jpg"]); // Default image
-        }
-      } catch (err) {
-        setError((err as Error).message);
-      } finally {
-        setLoading(false);
+  const {
+    data: raw,
+    isPending: loading,
+    error: queryError,
+    isError,
+  } = useQuery({
+    queryKey: queryKeys.carById(id, { includeSeller: true }),
+    queryFn: async () => {
+      const response = await fetch(`/api/cars/${id}?includeSeller=1`);
+      const data = (await response.json()) as CarDetailApi;
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
-    };
-    if (id) fetchCarAndUser();
+      if (!data.success) {
+        throw new Error("Car not found");
+      }
+      return data;
+    },
+    enabled: !!id,
+  });
+
+  const car = useMemo<ICar | null>(() => {
+    if (!raw) return null;
+    const { success: _s, seller: _seller, ...rest } = raw;
+    return rest as ICar;
+  }, [raw]);
+
+  const user = useMemo<IUser | null>(() => {
+    if (!raw?.seller) return null;
+    const s = raw.seller;
+    return {
+      clerkId: raw.userId,
+      firstName: s.firstName,
+      lastName: s.lastName ?? "",
+      email: "",
+      imageUrl: s.imageUrl,
+      phoneNumber: s.phoneNumber ?? "",
+      role: s.role,
+      address: "",
+      timestamp: "",
+    } as IUser;
+  }, [raw]);
+
+  const imageUrls = useMemo(() => {
+    if (!car) return [];
+    if (car.imageUrls && car.imageUrls.length > 0) return car.imageUrls;
+    if (car.imageUrl) return [car.imageUrl];
+    return ["/car.jpg"];
+  }, [car]);
+
+  const error = isError ? (queryError as Error).message : null;
+
+  useEffect(() => {
+    setCurrentImageIndex(0);
   }, [id]);
 
   const nextImage = () => {

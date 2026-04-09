@@ -1,7 +1,9 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { queryKeys } from "@/lib/query-keys";
 import ManageHouse from "@/components/manage-house";
 import { useUser } from "@clerk/nextjs";
 import { IHouse } from "@/lib/models/house.model";
@@ -14,49 +16,44 @@ import {
 import LoadingComponent from "@/components/ui/loading-component";
 import { useRouter } from "next/navigation";
 
-interface EditHousePageProps {
-  params: {
-    id: string;
-  };
-}
-
-export default function EditHousePage({ params }: EditHousePageProps) {
+export default function EditHousePage() {
   const { id } = useParams();
   const { user, isLoaded } = useUser();
   const router = useRouter();
-  const [house, setHouse] = useState<IHouse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [permissionDenied, setPermissionDenied] = useState(false);
 
-  useEffect(() => {
-    const fetchHouse = async () => {
-      try {
-        const response = await fetch(`/api/house/${id}`);
-        const data = await response.json();
-
-        if (!response.ok) {
-          throw new Error(data.error || "Failed to fetch house");
-        }
-
-        // Check if the current user owns this house
-        if (data.userId !== user?.id) {
-          setPermissionDenied(true);
-          return;
-        }
-
-        setHouse(data);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to fetch house");
-      } finally {
-        setLoading(false);
+  const {
+    data: raw,
+    isPending: loading,
+    error: queryError,
+    isError,
+  } = useQuery({
+    queryKey: queryKeys.houseById(String(id), { includeSeller: false }),
+    queryFn: async () => {
+      const response = await fetch(`/api/house/${id}`);
+      const data = (await response.json()) as { success?: boolean; error?: string } & IHouse;
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to fetch house");
       }
-    };
+      return data;
+    },
+    enabled: !!id && !!user,
+  });
 
-    if (id && user) {
-      fetchHouse();
-    }
-  }, [id, user]);
+  const permissionDenied = Boolean(
+    raw && user && raw.userId && raw.userId !== user.id
+  );
+
+  const house = useMemo(() => {
+    if (!raw || !user) return null;
+    if (raw.userId !== user.id) return null;
+    const { success: _s, error: _e, ...rest } = raw as {
+      success?: boolean;
+      error?: string;
+    } & IHouse;
+    return rest as IHouse;
+  }, [raw, user]);
+
+  const error = isError ? (queryError as Error).message : null;
 
   useEffect(() => {
     if (isLoaded && !user) {
