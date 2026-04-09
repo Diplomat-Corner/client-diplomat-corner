@@ -42,11 +42,21 @@ export async function withApiRoute(
       durationMs: Date.now() - start,
       status: res.status,
     });
-    const headers = new Headers(res.headers);
-    if (!headers.has("x-request-id")) {
-      headers.set("x-request-id", requestId);
+    // Merge x-request-id without assuming we can safely re-wrap every body type.
+    if (res.headers.has("x-request-id")) {
+      return res;
     }
-    return new NextResponse(res.body, { status: res.status, headers });
+    try {
+      const headers = new Headers(res.headers);
+      headers.set("x-request-id", requestId);
+      return new NextResponse(res.body, {
+        status: res.status,
+        statusText: res.statusText,
+        headers,
+      });
+    } catch {
+      return res;
+    }
   } catch (err) {
     logApiEvent({
       requestId,
