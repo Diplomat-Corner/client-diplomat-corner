@@ -2,6 +2,7 @@
 
 import type React from "react";
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   Check,
   ChevronDown,
@@ -60,12 +61,44 @@ const FilterSection: React.FC<FilterSectionProps> = ({
   const [isSelectOpen, setIsSelectOpen] = useState(false);
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [activeTab, setActiveTab] = useState<"sort" | "filter">("filter");
-  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
-  const [isSearchLoading, setIsSearchLoading] = useState<boolean>(false);
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [isDropdownVisible, setIsDropdownVisible] = useState<boolean>(false);
   const selectRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    if (debounceTimeoutRef.current) {
+      clearTimeout(debounceTimeoutRef.current);
+    }
+    debounceTimeoutRef.current = setTimeout(() => {
+      setDebouncedSearch(searchQuery.trim());
+    }, 300);
+    return () => {
+      if (debounceTimeoutRef.current) {
+        clearTimeout(debounceTimeoutRef.current);
+      }
+    };
+  }, [searchQuery]);
+
+  const { data: searchResults = [], isFetching: isSearchLoading } = useQuery({
+    queryKey: ["search", modelType ?? "all", debouncedSearch],
+    queryFn: async () => {
+      const categoryParam = modelType ? `&category=${modelType}s` : "";
+      const response = await fetch(
+        `/api/search?query=${encodeURIComponent(debouncedSearch)}${categoryParam}`
+      );
+      if (!response.ok) {
+        throw new Error("Network response was not ok");
+      }
+      const data: SearchResult[] = await response.json();
+      return modelType
+        ? data.filter((result) => result.type === modelType)
+        : data;
+    },
+    enabled: debouncedSearch.length > 0,
+    staleTime: 60_000,
+  });
 
   // Group filter options by category
   const groupedFilters = filterOptions.reduce((acc, option) => {
@@ -107,69 +140,13 @@ const FilterSection: React.FC<FilterSectionProps> = ({
     };
   }, []);
 
-  // Debounced search function
-  const fetchSearchResults = useCallback(
-    async (query: string) => {
-      if (!query) {
-        setSearchResults([]);
-        setIsSearchLoading(false);
-        return;
-      }
-      setIsSearchLoading(true);
-      setIsDropdownVisible(true); // Show dropdown immediately when typing starts
-
-      try {
-        // Add model type to query params if provided
-        const categoryParam = modelType ? `&category=${modelType}s` : "";
-        const response = await fetch(
-          `/api/search?query=${encodeURIComponent(query)}${categoryParam}`
-        );
-        if (!response.ok) {
-          throw new Error("Network response was not ok");
-        }
-        const data: SearchResult[] = await response.json();
-        // Filter results by model type if provided
-        const filteredResults = modelType
-          ? data.filter((result) => result.type === modelType)
-          : data;
-        setSearchResults(filteredResults);
-      } catch (error) {
-        console.error("Failed to fetch search results:", error);
-        setSearchResults([]); // Clear results on error
-      } finally {
-        setIsSearchLoading(false);
-      }
-    },
-    [modelType]
-  );
-
-  // Effect for debounced search
   useEffect(() => {
-    // Clear the previous timeout if it exists
-    if (debounceTimeoutRef.current) {
-      clearTimeout(debounceTimeoutRef.current);
-    }
-
     if (searchQuery.trim()) {
-      setIsSearchLoading(true); // Show loading indicator while waiting for debounce
       setIsDropdownVisible(true);
-      // Set a new timeout
-      debounceTimeoutRef.current = setTimeout(() => {
-        fetchSearchResults(searchQuery.trim());
-      }, 300); // 300ms debounce time
     } else {
-      setSearchResults([]);
-      setIsSearchLoading(false);
       setIsDropdownVisible(false);
     }
-
-    // Cleanup function to clear timeout if component unmounts or query changes
-    return () => {
-      if (debounceTimeoutRef.current) {
-        clearTimeout(debounceTimeoutRef.current);
-      }
-    };
-  }, [searchQuery, fetchSearchResults]);
+  }, [searchQuery]);
 
   // Handle search result click
   const handleResultClick = (result: SearchResult) => {

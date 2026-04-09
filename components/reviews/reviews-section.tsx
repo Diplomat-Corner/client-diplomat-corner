@@ -1,7 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useMemo } from "react";
 import { useUser } from "@clerk/nextjs";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { queryKeys } from "@/lib/query-keys";
 import { motion } from "framer-motion";
 import { MessageSquare, AlertCircle } from "lucide-react";
 import ReviewCard from "./review-card";
@@ -35,61 +37,43 @@ export default function ReviewsSection({
   sellerId,
 }: ReviewsSectionProps) {
   const { user } = useUser();
-  const [reviews, setReviews] = useState<Review[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [averageRating, setAverageRating] = useState(0);
-  const [hasUserReviewed, setHasUserReviewed] = useState(false);
+  const queryClient = useQueryClient();
   const [deletingReviewId, setDeletingReviewId] = useState<string | null>(null);
   const [likingReviewId, setLikingReviewId] = useState<string | null>(null);
   const userId = user?.id;
 
-  useEffect(() => {
-    const fetchReviews = async () => {
-      try {
-        const response = await fetch(`/api/reviews?productId=${productId}`);
-        if (!response.ok) {
-          throw new Error("Failed to fetch reviews");
-        }
-
-        const data = await response.json();
-        // Transform the data to include userName
-        const reviewsWithNames = data.map((review: Review) => ({
-          ...review,
-          userName: review.userName || "Anonymous User",
-          createdAt: new Date(review.createdAt),
-        }));
-
-        setReviews(reviewsWithNames);
-
-        // Calculate average rating
-        if (reviewsWithNames.length > 0) {
-          const total = reviewsWithNames.reduce(
-            (sum: number, review: Review) => sum + review.rating,
-            0
-          );
-          setAverageRating(
-            Number.parseFloat((total / reviewsWithNames.length).toFixed(1))
-          );
-        }
-
-        // Check if current user has already reviewed - only if user is logged in
-        if (user) {
-          const userReview = reviewsWithNames.find(
-            (review: Review) => review.userId === user.id
-          );
-          setHasUserReviewed(!!userReview);
-        }
-      } catch (err) {
-        console.error("Error fetching reviews:", err);
-        setError("Failed to load reviews");
-      } finally {
-        setLoading(false);
+  const {
+    data: reviews = [],
+    isLoading: loading,
+    isError,
+  } = useQuery({
+    queryKey: queryKeys.reviews(productId, productType),
+    queryFn: async () => {
+      const response = await fetch(`/api/reviews?productId=${productId}`);
+      if (!response.ok) {
+        throw new Error("Failed to fetch reviews");
       }
-    };
+      const data = await response.json();
+      return data.map((review: Review) => ({
+        ...review,
+        userName: review.userName || "Anonymous User",
+        createdAt: new Date(review.createdAt),
+      })) as Review[];
+    },
+  });
 
-    fetchReviews();
-  }, [productId, user]);
+  const error = isError ? "Failed to load reviews" : "";
+
+  const averageRating = useMemo(() => {
+    if (reviews.length === 0) return 0;
+    const total = reviews.reduce((sum, r) => sum + r.rating, 0);
+    return Number.parseFloat((total / reviews.length).toFixed(1));
+  }, [reviews]);
+
+  const hasUserReviewed = useMemo(() => {
+    if (!user) return false;
+    return reviews.some((r) => r.userId === user.id);
+  }, [reviews, user]);
 
   const handleSubmitReview = async (reviewData: {
     rating: number;
@@ -115,27 +99,12 @@ export default function ReviewsSection({
         throw new Error("Failed to submit review");
       }
 
-      const newReview = await response.json();
-
-      // Add the new review to the list
-      const reviewWithName = {
-        ...newReview,
-        userName: user.firstName || user.username || "User",
-        userImage: user.imageUrl,
-        createdAt: new Date(),
-        isOwn: true,
-      };
-
-      setReviews([reviewWithName, ...reviews]);
-      setHasUserReviewed(true);
+      await response.json();
 
       // Recalculate average rating
-      const total =
-        reviews.reduce((sum, review) => sum + review.rating, 0) +
-        reviewData.rating;
-      setAverageRating(
-        Number.parseFloat((total / (reviews.length + 1)).toFixed(1))
-      );
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.reviews(productId, productType),
+      });
     } catch (err) {
       console.error("Error submitting review:", err);
       throw err;
@@ -157,22 +126,9 @@ export default function ReviewsSection({
         throw new Error("Failed to like review");
       }
 
-      // Get the review that was liked
-      const reviewToLike = reviews.find((review) => review._id === reviewId);
-
-      // Update the likes array locally by adding the current userId
-      setReviews(
-        reviews.map((review) =>
-          review._id === reviewId
-            ? {
-                ...review,
-                likes: review.likes.includes(userId)
-                  ? review.likes
-                  : [...review.likes, userId],
-              }
-            : review
-        )
-      );
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.reviews(productId, productType),
+      });
     } catch (err) {
       console.error("Error liking review:", err);
     } finally {
@@ -194,29 +150,9 @@ export default function ReviewsSection({
         throw new Error("Failed to delete review");
       }
 
-      // Get the review that was deleted
-      const reviewToDelete = reviews.find((review) => review._id === reviewId);
-
-      // Remove the review from the list
-      const updatedReviews = reviews.filter(
-        (review) => review._id !== reviewId
-      );
-      setReviews(updatedReviews);
-
-      // Recalculate average rating
-      if (updatedReviews.length > 0) {
-        const total = updatedReviews.reduce(
-          (sum, review) => sum + review.rating,
-          0
-        );
-        setAverageRating(
-          Number.parseFloat((total / updatedReviews.length).toFixed(1))
-        );
-      } else {
-        setAverageRating(0);
-      }
-
-      setHasUserReviewed(false);
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.reviews(productId, productType),
+      });
     } catch (err) {
       console.error("Error deleting review:", err);
     } finally {

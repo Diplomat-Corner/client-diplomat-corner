@@ -4,10 +4,13 @@ import Image from "next/image";
 import Link from "next/link";
 import { useUser } from "@clerk/nextjs";
 import { IHouse } from "@/lib/models/house.model";
+import type { SellerPreview } from "@/lib/seller-preview";
+import { sellerPreviewToCardUserInfo } from "@/lib/seller-card-mapper";
 import Avatar from "../ui/avatar";
 
 interface CardProps extends IHouse {
   listedBy?: string;
+  seller?: SellerPreview;
 }
 
 interface UserInfo {
@@ -28,17 +31,28 @@ const CardHouse: React.FC<CardProps> = ({
   imageUrl,
   advertisementType,
   userId,
+  seller,
 }) => {
   const { user } = useUser();
   const isOwner = user?.id === userId;
-  const [userInfo, setUserInfo] = useState<UserInfo>({
-    name: "Anonymous",
-    imageUrl: "",
-    role: "customer",
-  });
-  const [isLoading, setIsLoading] = useState(true);
+  const [userInfo, setUserInfo] = useState<UserInfo>(() =>
+    seller
+      ? sellerPreviewToCardUserInfo(seller)
+      : {
+          name: "Anonymous",
+          imageUrl: "",
+          role: "customer",
+        }
+  );
+  const [isLoading, setIsLoading] = useState(() => !seller);
 
   useEffect(() => {
+    if (seller) {
+      setUserInfo(sellerPreviewToCardUserInfo(seller));
+      setIsLoading(false);
+      return;
+    }
+
     const fetchUserInfo = async () => {
       if (!userId) {
         setIsLoading(false);
@@ -130,7 +144,7 @@ const CardHouse: React.FC<CardProps> = ({
     };
 
     fetchUserInfo();
-  }, [userId]);
+  }, [userId, seller]);
 
   return (
     <div className="relative z-0">

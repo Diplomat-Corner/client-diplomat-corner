@@ -1,6 +1,8 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { queryKeys } from "@/lib/query-keys";
 import { motion, AnimatePresence } from "framer-motion";
 import { useUser } from "@clerk/nextjs";
 import {
@@ -265,13 +267,11 @@ const FormattedMessage: React.FC<FormattedMessageProps> = ({ message }) => {
 export default function Notifications() {
   const { user, isLoaded } = useUser();
   const isTabActive = useTabActive();
-  const [notifications, setNotifications] = useState<INotification[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
   const [activeFilter, setActiveFilter] = useState<string>("all");
   const [expandedNotification, setExpandedNotification] = useState<
     string | null
   >(null);
-  const [unreadCount, setUnreadCount] = useState(0);
   const [deletingIds, setDeletingIds] = useState<string[]>([]);
 
   // Wrap subscribeToPushNotifications in useCallback
@@ -312,42 +312,35 @@ export default function Notifications() {
     }
   }, [isLoaded, user, subscribeToPushNotifications]);
 
-  // Wrap fetchNotifications in useCallback
-  const fetchNotifications = useCallback(async () => {
-    if (!isLoaded || !user) {
-      setLoading(false);
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const response = await fetch(`/api/notifications?userId=${user.id}`);
+  const {
+    data: notifications = [],
+    isLoading: loading,
+    refetch,
+  } = useQuery({
+    queryKey: queryKeys.notifications(user?.id),
+    queryFn: async () => {
+      const response = await fetch(`/api/notifications?userId=${user!.id}`);
       if (!response.ok) {
         throw new Error(`Failed to fetch notifications: ${response.status}`);
       }
-      const data = await response.json();
-      setNotifications(data);
-      setUnreadCount(data.filter((n: INotification) => !n.isRead).length);
-    } catch (error) {
-      console.error("Failed to fetch notifications:", error);
-    } finally {
-      setLoading(false);
-    }
-  }, [isLoaded, user, setNotifications, setLoading]);
+      return response.json() as Promise<INotification[]>;
+    },
+    enabled: isLoaded && !!user,
+    staleTime: 30_000,
+  });
 
-  // Initial fetch
-  useEffect(() => {
-    fetchNotifications();
-  }, [fetchNotifications]);
+  const unreadCount = useMemo(
+    () => notifications.filter((n) => !n.isRead).length,
+    [notifications]
+  );
 
-  // Refresh notifications only when the tab becomes active again.
   const prevTabActiveRef = useRef<boolean>(isTabActive);
   useEffect(() => {
     if (prevTabActiveRef.current === false && isTabActive === true) {
-      fetchNotifications();
+      void refetch();
     }
     prevTabActiveRef.current = isTabActive;
-  }, [isTabActive, fetchNotifications]);
+  }, [isTabActive, refetch]);
 
   // Update the badge count when notifications change
   useEffect(() => {
@@ -394,10 +387,8 @@ export default function Notifications() {
     return notification.category === activeFilter;
   });
 
-  // Mark notification as read
-  const markAsRead = async (notification: INotification) => {
-    try {
-      setLoading(true);
+  const markReadMutation = useMutation({
+    mutationFn: async (notification: INotification) => {
       const response = await fetch(`/api/notifications`, {
         method: "PUT",
         headers: {
@@ -407,35 +398,21 @@ export default function Notifications() {
           notificationId: notification._id,
         }),
       });
+      if (!response.ok) throw new Error("Failed to mark as read");
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.notifications(user?.id),
+      });
+    },
+  });
 
-      if (response.ok) {
-        // Update the UI optimistically
-        setNotifications(
-          notifications.map((n) =>
-            n._id === notification._id ? { ...n, isRead: true } : n
-          )
-        );
-        setUnreadCount((prev) => (prev > 0 ? prev - 1 : 0));
-      } else {
-        console.error("Failed to mark notification as read");
-      }
-    } catch (error) {
-      console.error("Error marking notification as read:", error);
-    } finally {
-      setLoading(false);
-    }
+  const markAsRead = (notification: INotification) => {
+    markReadMutation.mutate(notification);
   };
 
-  // Mark all as read
-  const markAllAsRead = async () => {
-    try {
-      const unreadIds = filteredNotifications
-        .filter((notification) => !notification.isRead)
-        .map((notification) => notification._id);
-
-      if (unreadIds.length === 0) return;
-
-      // Use the regular notifications endpoint with a specific action
+  const markAllMutation = useMutation({
+    mutationFn: async (unreadIds: string[]) => {
       const response = await fetch("/api/notifications", {
         method: "PUT",
         headers: {
@@ -446,61 +423,57 @@ export default function Notifications() {
           notificationIds: unreadIds,
         }),
       });
-
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(
           errorData.message || "Failed to mark all notifications as read"
         );
       }
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.notifications(user?.id),
+      });
+    },
+  });
 
-      // Update local state
-      setNotifications((prev) =>
-        prev.map((notification) =>
-          unreadIds.includes(notification._id)
-            ? { ...notification, isRead: true }
-            : notification
-        )
-      );
+  const markAllAsRead = async () => {
+    const unreadIds = filteredNotifications
+      .filter((notification) => !notification.isRead)
+      .map((notification) => notification._id);
 
-      // The notifications state update will trigger the effect above
-      // which will update localStorage and dispatch the event
-    } catch (error) {
-      console.error("Error marking all notifications as read:", error);
+    if (unreadIds.length === 0) return;
+
+    try {
+      await markAllMutation.mutateAsync(unreadIds);
+    } catch {
       alert("Failed to mark all notifications as read. Please try again.");
     }
   };
 
-  // Delete notification
-  const deleteNotification = async (notification: INotification) => {
-    try {
-      // Add ID to deletingIds to show loading state
-      setDeletingIds((prev) => [...prev, notification._id]);
-
+  const deleteMutation = useMutation({
+    mutationFn: async (notification: INotification) => {
       const response = await fetch(
         `/api/notifications?id=${notification._id}`,
         {
           method: "DELETE",
         }
       );
+      if (!response.ok) throw new Error("Failed to delete");
+    },
+    onMutate: (notification) => {
+      setDeletingIds((prev) => [...prev, notification._id]);
+    },
+    onSettled: (_d, _e, notification) => {
+      setDeletingIds((prev) => prev.filter((i) => i !== notification._id));
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.notifications(user?.id),
+      });
+    },
+  });
 
-      if (response.ok) {
-        // Remove the notification from the UI
-        setNotifications(
-          notifications.filter((n) => n._id !== notification._id)
-        );
-        if (!notification.isRead) {
-          setUnreadCount((prev) => (prev > 0 ? prev - 1 : 0));
-        }
-      } else {
-        console.error("Failed to delete notification");
-      }
-    } catch (error) {
-      console.error("Error deleting notification:", error);
-    } finally {
-      // Remove ID from deletingIds regardless of success/failure
-      setDeletingIds((prev) => prev.filter((id) => id !== notification._id));
-    }
+  const deleteNotification = (notification: INotification) => {
+    deleteMutation.mutate(notification);
   };
 
   // Toggle expanded notification

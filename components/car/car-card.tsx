@@ -4,10 +4,14 @@ import Image from "next/image";
 import Link from "next/link";
 import { useUser } from "@clerk/nextjs";
 import { ICar } from "@/lib/models/car.model";
+import type { SellerPreview } from "@/lib/seller-preview";
+import { sellerPreviewToCardUserInfo } from "@/lib/seller-card-mapper";
 import Avatar from "../ui/avatar";
 
 interface CarCardProps extends ICar {
   listedBy?: string;
+  /** When set (e.g. from list API with includeSeller=1), skips per-card /api/users fetch. */
+  seller?: SellerPreview;
 }
 
 interface UserInfo {
@@ -30,17 +34,28 @@ const CarCard: React.FC<CarCardProps> = ({
   imageUrl,
   advertisementType = "Sale",
   userId,
+  seller,
 }) => {
   const { user } = useUser();
   const isOwner = user?.id === userId;
-  const [userInfo, setUserInfo] = useState<UserInfo>({
-    name: "Anonymous",
-    imageUrl: "",
-    role: "customer",
-  });
-  const [isLoading, setIsLoading] = useState(true);
+  const [userInfo, setUserInfo] = useState<UserInfo>(() =>
+    seller
+      ? sellerPreviewToCardUserInfo(seller)
+      : {
+          name: "Anonymous",
+          imageUrl: "",
+          role: "customer",
+        }
+  );
+  const [isLoading, setIsLoading] = useState(() => !seller);
 
   useEffect(() => {
+    if (seller) {
+      setUserInfo(sellerPreviewToCardUserInfo(seller));
+      setIsLoading(false);
+      return;
+    }
+
     const fetchUserInfo = async () => {
       if (!userId) {
         setIsLoading(false);
@@ -134,7 +149,7 @@ const CarCard: React.FC<CarCardProps> = ({
     };
 
     fetchUserInfo();
-  }, [userId]);
+  }, [userId, seller]);
 
   return (
     <div className="relative z-0">

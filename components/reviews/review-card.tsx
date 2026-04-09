@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, Fragment, useEffect, useRef } from "react";
+import { useMutation } from "@tanstack/react-query";
 import {
   Star,
   ThumbsUp,
@@ -57,7 +58,6 @@ export default function ReviewCard({
   const [showReportModal, setShowReportModal] = useState(false);
   const [reportType, setReportType] = useState<ReportType | null>(null);
   const [reportDescription, setReportDescription] = useState("");
-  const [isSubmittingReport, setIsSubmittingReport] = useState(false);
   const [reportSuccess, setReportSuccess] = useState(false);
   const [reportError, setReportError] = useState("");
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -123,16 +123,8 @@ export default function ReviewCard({
     setReportError("");
   };
 
-  const handleSubmitReport = async () => {
-    if (!currentUserId) return;
-    if (!reportType) {
-      setReportError("Please select a reason for reporting");
-      return;
-    }
-
-    try {
-      setIsSubmittingReport(true);
-
+  const reportMutation = useMutation({
+    mutationFn: async () => {
       const response = await fetch("/api/reports", {
         method: "POST",
         headers: {
@@ -150,7 +142,8 @@ export default function ReviewCard({
         const errorData = await response.json();
         throw new Error(errorData.error || "Failed to submit report");
       }
-
+    },
+    onSuccess: () => {
       setReportSuccess(true);
       setReportType(null);
       setReportDescription("");
@@ -161,14 +154,26 @@ export default function ReviewCard({
       timeoutRef.current = setTimeout(() => {
         handleCloseReportModal();
       }, 3000);
-    } catch (error) {
+    },
+    onError: (error: unknown) => {
       setReportError(
         error instanceof Error ? error.message : "Failed to submit report"
       );
-    } finally {
-      setIsSubmittingReport(false);
+    },
+  });
+
+  const handleSubmitReport = () => {
+    if (!currentUserId) return;
+    if (!reportType) {
+      setReportError("Please select a reason for reporting");
+      return;
     }
+
+    setReportError("");
+    reportMutation.mutate();
   };
+
+  const isSubmittingReport = reportMutation.isPending;
 
   const timeAgo = formatDistanceToNow(new Date(review.createdAt), {
     addSuffix: true,

@@ -6,7 +6,13 @@ import { getCarFilterOptions } from "@/lib/listings/car-filters";
 import { HOUSE_FILTER_OPTIONS } from "@/lib/listings/house-filters";
 import type { FilterOption } from "@/components/filter-section";
 import { useAuth, useUser } from "@clerk/nextjs";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useInfiniteQuery,
+  useQuery,
+} from "@tanstack/react-query";
+import { queryKeys } from "@/lib/query-keys";
+import type { SellerPreview } from "@/lib/seller-preview";
 
 export type ListingBrowseMode = "house" | "car";
 
@@ -28,27 +34,33 @@ const SORT_OPTIONS_CAR = [
   { value: "Size Large to Small", label: "Mileage: High to Low" },
 ];
 
-function normalizeHouse(h: Record<string, unknown>): IHouse {
+function normalizeHouse(
+  h: Record<string, unknown>
+): IHouse & { seller?: SellerPreview } {
+  const seller = h.seller as SellerPreview | undefined;
   return {
-    ...(h as IHouse),
+    ...(h as unknown as IHouse),
     price: Number(h.price),
     bedroom: Number(h.bedroom),
     bathroom: Number(h.bathroom),
     size: Number(h.size),
-    rating: Number(h.rating) || 0,
-    likes: Number(h.likes) || 0,
-  };
+    ...(seller ? { seller } : {}),
+  } as IHouse & { seller?: SellerPreview };
 }
 
-function normalizeCar(c: Record<string, unknown>): ICar {
+function normalizeCar(
+  c: Record<string, unknown>
+): ICar & { seller?: SellerPreview } {
+  const seller = c.seller as SellerPreview | undefined;
   return {
-    ...(c as ICar),
+    ...(c as unknown as ICar),
     price: Number(c.price),
     mileage: Number(c.mileage),
     year: Number(c.year),
     rating: Number(c.rating) || 0,
     likes: Number(c.likes) || 0,
-  };
+    ...(seller ? { seller } : {}),
+  } as ICar & { seller?: SellerPreview };
 }
 
 function applySortOrder(
@@ -97,21 +109,29 @@ function applySortOrder(
   return c;
 }
 
+type PagePayload = {
+  success: boolean;
+  cars?: Record<string, unknown>[];
+  houses?: Record<string, unknown>[];
+  pagination?: {
+    total: number;
+    page: number;
+    limit: number;
+    hasMore: boolean;
+  };
+  error?: string;
+};
+
 export function useListingBrowse(
   mode: ListingBrowseMode,
   advertisementType?: string
 ) {
-  const { userId } = useAuth();
+  const { userId, isLoaded } = useAuth();
   const { user } = useUser();
 
   const [items, setItems] = useState<(IHouse | ICar)[]>([]);
-  const [userItems, setUserItems] = useState<(IHouse | ICar)[]>([]);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filterOpen, setFilterOpen] = useState(false);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [hasMore, setHasMore] = useState(true);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [sortOrder, setSortOrder] = useState("Default");
   const [activeFilters, setActiveFilters] = useState<string[]>([]);
   const [fullItems, setFullItems] = useState<(IHouse | ICar)[]>([]);
@@ -129,102 +149,199 @@ export function useListingBrowse(
   const sortOptions =
     mode === "house" ? SORT_OPTIONS_HOUSE : SORT_OPTIONS_CAR;
 
-  useEffect(() => {
-    const fetchUser = async () => {
-      if (!userId) {
-        setUserItems([]);
-        return;
+  const mineQuery = useQuery({
+    queryKey:
+      mode === "house"
+        ? queryKeys.houses.mine(userId ?? undefined, advertisementType)
+        : queryKeys.cars.mine(userId ?? undefined, advertisementType),
+    queryFn: async () => {
+      const base = mode === "house" ? "/api/house" : "/api/cars";
+      const res = await fetch(
+        `${base}?userId=${userId}${
+          advertisementType ? `&advertisementType=${advertisementType}` : ""
+        }`
+      );
+      const data = await res.json();
+      const key = mode === "house" ? "houses" : "cars";
+      if (!data.success || !Array.isArray(data[key])) {
+        throw new Error("Failed to load your listings");
       }
-      try {
-        const base = mode === "house" ? "/api/house" : "/api/cars";
-        const res = await fetch(
-          `${base}?userId=${userId}${
-            advertisementType ? `&advertisementType=${advertisementType}` : ""
-          }`
-        );
-        const data = await res.json();
-        const key = mode === "house" ? "houses" : "cars";
-        if (data.success && Array.isArray(data[key])) {
-          const formatted = data[key].map((row: Record<string, unknown>) =>
-            mode === "house" ? normalizeHouse(row) : normalizeCar(row)
-          );
-          setUserItems(formatted);
-        }
-      } catch (e) {
-        console.error(e);
-        setUserItems([]);
+      return (data[key] as Record<string, unknown>[]).map((row) =>
+        mode === "house" ? normalizeHouse(row) : normalizeCar(row)
+      ) as (IHouse | ICar)[];
+    },
+    enabled: isLoaded && !!userId,
+    staleTime: 60_000,
+  });
+
+  const userItems = useMemo(
+    () => (mineQuery.data as (IHouse | ICar)[]) ?? [],
+    [mineQuery.data]
+  );
+
+  const houseInfinite = useInfiniteQuery({
+    queryKey: queryKeys.houses.browse("infinite", {
+      excludeUserId: userId ?? "",
+      advertisementType: advertisementType ?? "",
+      includeSeller: true,
+    }),
+    queryFn: async ({ pageParam }): Promise<PagePayload> => {
+      const page = pageParam as number;
+      const url = `/api/house?page=${page}&limit=${ITEMS_PER_PAGE}&excludeUserId=${
+        userId || ""
+      }${
+        advertisementType ? `&advertisementType=${advertisementType}` : ""
+      }&includeSeller=1`;
+      const res = await fetch(url);
+      const data = (await res.json()) as PagePayload;
+      if (!data.success) {
+        throw new Error(data.error || "Failed to fetch houses");
       }
-    };
-    fetchUser();
-  }, [userId, advertisementType, mode]);
+      return data;
+    },
+    initialPageParam: 1,
+    getNextPageParam: (last) =>
+      last.pagination?.hasMore ? last.pagination.page + 1 : undefined,
+    enabled: isLoaded && mode === "house",
+    staleTime: 60_000,
+  });
+
+  const carRentQuery = useQuery({
+    queryKey: queryKeys.cars.browse("page", {
+      page: 1,
+      excludeUserId: userId ?? "",
+      advertisementType: "Rent",
+      includeSeller: true,
+      limit: 10000,
+    }),
+    queryFn: async (): Promise<PagePayload> => {
+      const url = `/api/cars?limit=10000&excludeUserId=${userId || ""}${
+        advertisementType ? `&advertisementType=${advertisementType}` : ""
+      }&includeSeller=1`;
+      const res = await fetch(url);
+      const data = (await res.json()) as PagePayload;
+      if (!data.success) {
+        throw new Error(data.error || "Failed to fetch cars");
+      }
+      return data;
+    },
+    enabled: isLoaded && mode === "car" && advertisementType === "Rent",
+    staleTime: 60_000,
+  });
+
+  const carSaleInfinite = useInfiniteQuery({
+    queryKey: queryKeys.cars.browse("infinite", {
+      excludeUserId: userId ?? "",
+      advertisementType: advertisementType ?? "",
+      includeSeller: true,
+      limit: ITEMS_PER_PAGE,
+    }),
+    queryFn: async ({ pageParam }): Promise<PagePayload> => {
+      const page = pageParam as number;
+      const url = `/api/cars?page=${page}&limit=${ITEMS_PER_PAGE}&excludeUserId=${
+        userId || ""
+      }${
+        advertisementType ? `&advertisementType=${advertisementType}` : ""
+      }&includeSeller=1`;
+      const res = await fetch(url);
+      const data = (await res.json()) as PagePayload;
+      if (!data.success) {
+        throw new Error(data.error || "Failed to fetch cars");
+      }
+      return data;
+    },
+    initialPageParam: 1,
+    getNextPageParam: (last) =>
+      last.pagination?.hasMore ? last.pagination.page + 1 : undefined,
+    enabled:
+      isLoaded && mode === "car" && advertisementType !== "Rent",
+    staleTime: 60_000,
+  });
+
+  const browseFlat = useMemo(() => {
+    if (mode === "house") {
+      const pages = houseInfinite.data?.pages;
+      if (!pages?.length) return [];
+      return pages.flatMap((p) =>
+        (p.houses ?? []).map((h) => normalizeHouse(h as Record<string, unknown>))
+      ) as IHouse[];
+    }
+    if (advertisementType === "Rent") {
+      const raw = carRentQuery.data?.cars ?? [];
+      return raw.map((c) =>
+        normalizeCar(c as Record<string, unknown>)
+      ) as ICar[];
+    }
+    const pages = carSaleInfinite.data?.pages;
+    if (!pages?.length) return [];
+    return pages.flatMap((p) =>
+      (p.cars ?? []).map((c) => normalizeCar(c as Record<string, unknown>))
+    ) as ICar[];
+  }, [
+    mode,
+    advertisementType,
+    houseInfinite.data?.pages,
+    carRentQuery.data?.cars,
+    carSaleInfinite.data?.pages,
+  ]);
 
   useEffect(() => {
-    const fetchList = async () => {
-      try {
-        setLoading(true);
-        setError(null);
+    const err =
+      mode === "house"
+        ? houseInfinite.error
+        : advertisementType === "Rent"
+          ? carRentQuery.error
+          : carSaleInfinite.error;
+    if (err) {
+      setError(
+        mode === "house"
+          ? "Error fetching houses"
+          : "Error fetching cars"
+      );
+    } else {
+      setError(null);
+    }
+  }, [
+    mode,
+    advertisementType,
+    houseInfinite.error,
+    carRentQuery.error,
+    carSaleInfinite.error,
+  ]);
 
-        if (mode === "house") {
-          const response = await fetch(
-            `/api/house?page=${currentPage}&limit=${ITEMS_PER_PAGE}&excludeUserId=${
-              userId || ""
-            }${
-              advertisementType ? `&advertisementType=${advertisementType}` : ""
-            }`
-          );
-          const data = await response.json();
-          if (data.success && Array.isArray(data.houses)) {
-            const formatted = data.houses.map((h: Record<string, unknown>) =>
-              normalizeHouse(h)
-            );
-            setItems((prev) =>
-              currentPage === 1 ? formatted : [...prev, ...formatted]
-            );
-            setFullItems(formatted);
-            setHasMore(data.pagination.hasMore);
-          } else {
-            setError("Failed to fetch houses");
-          }
-        } else {
-          const response = await fetch(
-            `/api/cars?${
-              advertisementType === "Rent" ? "" : `page=${currentPage}&`
-            }limit=${
-              advertisementType === "Rent" ? "10000" : ITEMS_PER_PAGE
-            }&excludeUserId=${userId || ""}${
-              advertisementType ? `&advertisementType=${advertisementType}` : ""
-            }`
-          );
-          const data = await response.json();
-          if (data.success && Array.isArray(data.cars)) {
-            const formatted = data.cars.map((c: Record<string, unknown>) =>
-              normalizeCar(c)
-            );
-            if (advertisementType === "Rent") {
-              setItems(formatted);
-              setFullItems(formatted);
-              setHasMore(false);
-            } else {
-              setItems((prev) =>
-                currentPage === 1 ? formatted : [...prev, ...formatted]
-              );
-              setFullItems(formatted);
-              setHasMore(data.pagination.hasMore);
-            }
-          } else {
-            setError("Failed to fetch cars");
-          }
-        }
-      } catch (err) {
-        setError(mode === "house" ? "Error fetching houses" : "Error fetching cars");
-        console.error(err);
-      } finally {
-        setLoading(false);
-        setIsLoadingMore(false);
-      }
-    };
-    fetchList();
-  }, [currentPage, userId, advertisementType, mode]);
+  useEffect(() => {
+    setFullItems(browseFlat);
+    setItems(browseFlat as (IHouse | ICar)[]);
+  }, [browseFlat]);
+
+  const loading =
+    !isLoaded ||
+    (mode === "house"
+      ? houseInfinite.isPending
+      : advertisementType === "Rent"
+        ? carRentQuery.isPending
+        : carSaleInfinite.isPending);
+
+  const isLoadingMore =
+    mode === "house"
+      ? houseInfinite.isFetchingNextPage
+      : advertisementType === "Rent"
+        ? false
+        : carSaleInfinite.isFetchingNextPage;
+
+  const hasMore =
+    mode === "house"
+      ? houseInfinite.hasNextPage ?? false
+      : advertisementType === "Rent"
+        ? false
+        : carSaleInfinite.hasNextPage ?? false;
+
+  const currentPage =
+    mode === "house"
+      ? houseInfinite.data?.pages?.length ?? 1
+      : advertisementType === "Rent"
+        ? 1
+        : carSaleInfinite.data?.pages?.length ?? 1;
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -367,11 +484,20 @@ export function useListingBrowse(
   );
 
   const loadMore = useCallback(() => {
-    if (!isLoadingMore && hasMore) {
-      setIsLoadingMore(true);
-      setCurrentPage((p) => p + 1);
+    if (isLoadingMore || !hasMore) return;
+    if (mode === "house") {
+      void houseInfinite.fetchNextPage();
+    } else if (mode === "car" && advertisementType !== "Rent") {
+      void carSaleInfinite.fetchNextPage();
     }
-  }, [isLoadingMore, hasMore]);
+  }, [
+    mode,
+    advertisementType,
+    isLoadingMore,
+    hasMore,
+    houseInfinite.fetchNextPage,
+    carSaleInfinite.fetchNextPage,
+  ]);
 
   const bannerTitle =
     mode === "house"

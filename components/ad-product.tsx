@@ -1,5 +1,7 @@
 "use client";
-import { useState, useEffect, useTransition } from "react";
+import { useState, useTransition } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { queryKeys } from "@/lib/query-keys";
 import {
   Plus,
   Pencil,
@@ -28,6 +30,7 @@ interface AdvertisementResponse {
 }
 
 export default function ManageAds() {
+  const queryClient = useQueryClient();
   const [priority, setPriority] = useState("Important");
   const [visibility, setVisibility] = useState(true);
   const [time, setTime] = useState("Current");
@@ -37,7 +40,16 @@ export default function ManageAds() {
     message: string;
     errors?: string[];
   } | null>(null);
-  const [ads, setAds] = useState<AdvertisementResponse[]>([]); // State for fetched ads
+
+  const { data: ads = [] } = useQuery({
+    queryKey: queryKeys.advertisements(),
+    queryFn: async () => {
+      const response = await fetch("/api/advertisements");
+      if (!response.ok) throw new Error("Failed to fetch ads");
+      return response.json() as Promise<AdvertisementResponse[]>;
+    },
+    staleTime: 60_000,
+  });
 
   const [formData, setFormData] = useState({
     companyName: "",
@@ -48,21 +60,6 @@ export default function ManageAds() {
     description: "",
     advertisementType: "Banner",
   });
-
-  // Fetch all ads on component mount
-  useEffect(() => {
-    const fetchAds = async () => {
-      try {
-        const response = await fetch("/api/advertisements");
-        if (!response.ok) throw new Error("Failed to fetch ads");
-        const data = await response.json();
-        setAds(data);
-      } catch (error) {
-        console.error("Error fetching ads:", error);
-      }
-    };
-    fetchAds();
-  }, []);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -114,10 +111,9 @@ export default function ManageAds() {
           advertisementType: "Banner",
         });
 
-        // Refresh ads after creation
-        const response = await fetch("/api/advertisements");
-        const updatedAds = await response.json();
-        setAds(updatedAds);
+        void queryClient.invalidateQueries({
+          queryKey: queryKeys.advertisements(),
+        });
       } catch (error) {
         setSubmitResult({
           success: false,

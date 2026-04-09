@@ -1,7 +1,7 @@
 import { ChevronDown, Plus } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { images } from "@public/assets/images";
+import { images } from "@/lib/images";
 
 export const HeroImages = () => {
   return (
