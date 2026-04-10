@@ -44,4 +44,5 @@ export const queryKeys = {
   reviews: (productId: string, productType: string) =>
     ["reviews", productId, productType] as const,
   advertisements: () => ["advertisements"] as const,
+  homeAdvertisements: () => ["advertisements", "home"] as const,
 } as const;
