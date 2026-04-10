@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { motion } from "framer-motion";
 import MaxWidthWrapper from "@/components/max-width-wrapper";
 import Image from "next/image";
@@ -30,6 +30,11 @@ import { useQuery } from "@tanstack/react-query";
 import { PhoneNumberPopup } from "@/components/PhoneNumberPopup";
 import { useTabActive } from "@/hooks/use-tab-active";
 import { queryKeys } from "@/lib/query-keys";
+import type { HomePublicAd } from "@/lib/actions/advertisements.actions";
+import {
+  trackClick,
+  useAdvertisementView,
+} from "@/lib/utils/advertisement-tracker";
 
 // Dynamic Advertisement Component
 const AdvertPlaceholder = ({
@@ -60,58 +65,97 @@ const AdvertPlaceholder = ({
   );
 };
 
-// Advertisement Carousel Component
+type CarouselSlide = {
+  key: string;
+  image: string;
+  alt: string;
+  badge: string;
+  title: string;
+  description: string;
+  link: string;
+  linkText: string;
+};
+
+const DEFAULT_CAROUSEL_SLIDES: CarouselSlide[] = [
+  {
+    key: "v1",
+    image: images.vial_logo.src,
+    alt: images.vial_logo.alt,
+    badge: "Featured Ad",
+    title: "Vital Security",
+    description: "Discover premium security solutions for your needs.",
+    link: "https://www.vitalsecureplc.com",
+    linkText: "Learn More",
+  },
+  {
+    key: "v2",
+    image: images.vital_1.src,
+    alt: images.vital_1.alt,
+    badge: "Sponsored",
+    title: "Vital Security",
+    description:
+      "Comprehensive security service for diplomatic community",
+    link: "https://www.vitalsecureplc.com",
+    linkText: "Explore Services",
+  },
+  {
+    key: "v3",
+    image: images.vital_2.src,
+    alt: images.vital_2.alt,
+    badge: "Sponsored",
+    title: "Vital Security",
+    description: "Excellence in international standards.",
+    link: "https://www.vitalsecureplc.com",
+    linkText: "Visit Website",
+  },
+  {
+    key: "v4",
+    image: images.vital_3.src,
+    alt: images.vital_3.alt,
+    badge: "Sponsored",
+    title: "Vital Security",
+    description: "Innovative vital security solutions for modern needs.",
+    link: "https://www.vitalsecureplc.com",
+    linkText: "Contact Us",
+  },
+];
+
 const AdvertisementCarousel = ({
   isTabActive,
+  carouselAd,
 }: {
   isTabActive: boolean;
+  carouselAd?: HomePublicAd | null;
 }) => {
   const [currentAdIndex, setCurrentAdIndex] = useState(0);
   const [isHovering, setIsHovering] = useState(false);
 
-  // Advertisement data array using vital images
-  const advertisements = [
-    {
-      id: 1,
-      image: images.vial_logo.src,
-      alt: images.vial_logo.alt,
-      badge: "Featured Ad",
-      title: "Vital Security",
-      description: "Discover premium security solutions for your needs.",
-      link: "https://www.vitalsecureplc.com",
-      linkText: "Learn More",
-    },
-    {
-      id: 2,
-      image: images.vital_1.src,
-      alt: images.vital_1.alt,
-      badge: "Sponsored",
-      title: "Vital Security",
-      description: "Comprehensive security service for diplomatic community",
-      link: "https://www.vitalsecureplc.com",
-      linkText: "Explore Services",
-    },
-    {
-      id: 3,
-      image: images.vital_2.src,
-      alt: images.vital_2.alt,
-      badge: "Sponsored",
-      title: "Vital Security",
-      description: "Excellence in international standards.",
-      link: "https://www.vitalsecureplc.com",
-      linkText: "Visit Website",
-    },
-    {
-      id: 4,
-      image: images.vital_3.src,
-      alt: images.vital_3.alt,
-      badge: "Sponsored",
-      title: "Vital Security",
-      description: "Innovative vital security solutions for modern needs.",
-      link: "https://www.vitalsecureplc.com",
-      linkText: "Contact Us",
-    },
-  ];
+  const useDb =
+    !!carouselAd &&
+    Array.isArray(carouselAd.imageUrls) &&
+    carouselAd.imageUrls.length > 0;
+
+  const advertisements: CarouselSlide[] = useMemo(() => {
+    if (useDb && carouselAd) {
+      return carouselAd.imageUrls.map((url, i) => ({
+        key: `${carouselAd._id}-${i}`,
+        image: url,
+        alt: carouselAd.title,
+        badge: "Featured Ad",
+        title: carouselAd.title,
+        description: carouselAd.description,
+        link: carouselAd.link,
+        linkText: "Learn More",
+      }));
+    }
+    return DEFAULT_CAROUSEL_SLIDES;
+  }, [useDb, carouselAd]);
+
+  useAdvertisementView(useDb ? carouselAd?._id : undefined);
+
+  useEffect(() => {
+    setCurrentAdIndex(0);
+  }, [advertisements.length, useDb, carouselAd?._id]);
 
   const nextAd = () => {
     setCurrentAdIndex((prevIndex) =>
@@ -129,18 +173,27 @@ const AdvertisementCarousel = ({
     setCurrentAdIndex(index);
   };
 
-  // Auto-advance carousel
   useEffect(() => {
-    if (!isTabActive || isHovering) return;
+    if (!isTabActive || isHovering || advertisements.length <= 1) return;
 
     const interval = setInterval(() => {
       nextAd();
-    }, 5000); // Change ad every 5 seconds
+    }, 5000);
 
     return () => clearInterval(interval);
-  }, [isTabActive, isHovering]);
+  }, [isTabActive, isHovering, advertisements.length]);
 
   const currentAd = advertisements[currentAdIndex];
+  const trackableId = useDb ? carouselAd?._id : undefined;
+  const imageRemote =
+    typeof currentAd.image === "string" && currentAd.image.startsWith("http");
+
+  const handleCtaClick = async (e: React.MouseEvent<HTMLAnchorElement>) => {
+    if (!trackableId) return;
+    e.preventDefault();
+    await trackClick(trackableId);
+    window.open(currentAd.link, "_blank", "noopener,noreferrer");
+  };
 
   return (
     <div
@@ -155,11 +208,12 @@ const AdvertisementCarousel = ({
         alt={currentAd.alt}
         className="w-full h-[320px] sm:h-[420px] object-cover transition-transform duration-500 group-hover:scale-105"
         priority
+        unoptimized={imageRemote}
       />
       <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent"></div>
 
-      {/* Navigation Arrows */}
       <button
+        type="button"
         onClick={prevAd}
         className="absolute left-2 top-1/2 transform -translate-y-1/2 bg-white/20 backdrop-blur-sm text-white p-2 rounded-full hover:bg-white/30 transition-colors duration-300 opacity-0 group-hover:opacity-100"
         aria-label="Previous advertisement"
@@ -167,6 +221,7 @@ const AdvertisementCarousel = ({
         <ChevronLeft className="w-4 h-4" />
       </button>
       <button
+        type="button"
         onClick={nextAd}
         className="absolute right-2 top-1/2 transform -translate-y-1/2 bg-white/20 backdrop-blur-sm text-white p-2 rounded-full hover:bg-white/30 transition-colors duration-300 opacity-0 group-hover:opacity-100"
         aria-label="Next advertisement"
@@ -174,7 +229,6 @@ const AdvertisementCarousel = ({
         <ChevronRight className="w-4 h-4" />
       </button>
 
-      {/* Content Overlay */}
       <div className="absolute bottom-0 left-0 p-4 sm:p-6 w-full">
         <span className="bg-primary/90 text-white text-xs px-3 py-1 rounded-full backdrop-blur-sm">
           {currentAd.badge}
@@ -185,24 +239,40 @@ const AdvertisementCarousel = ({
         <p className="text-white/90 text-xs sm:text-sm mb-3 sm:mb-4 max-w-md">
           {currentAd.description}
         </p>
-        <Link
-          href={currentAd.link}
-          target="_blank"
-          className="inline-flex items-center gap-2 bg-white/90 backdrop-blur-sm text-primary px-3 py-1.5 sm:px-4 sm:py-2 rounded-full shadow-md hover:bg-white transition-colors duration-300 text-sm"
-        >
-          {currentAd.linkText}
-          <ChevronDown
-            size={16}
-            className="text-white w-3.5 h-3.5 sm:w-4 sm:h-4 rounded-full bg-primary"
-          />
-        </Link>
+        {trackableId ? (
+          <a
+            href={currentAd.link}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={handleCtaClick}
+            className="inline-flex items-center gap-2 bg-white/90 backdrop-blur-sm text-primary px-3 py-1.5 sm:px-4 sm:py-2 rounded-full shadow-md hover:bg-white transition-colors duration-300 text-sm cursor-pointer"
+          >
+            {currentAd.linkText}
+            <ChevronDown
+              size={16}
+              className="text-white w-3.5 h-3.5 sm:w-4 sm:h-4 rounded-full bg-primary"
+            />
+          </a>
+        ) : (
+          <Link
+            href={currentAd.link}
+            target="_blank"
+            className="inline-flex items-center gap-2 bg-white/90 backdrop-blur-sm text-primary px-3 py-1.5 sm:px-4 sm:py-2 rounded-full shadow-md hover:bg-white transition-colors duration-300 text-sm"
+          >
+            {currentAd.linkText}
+            <ChevronDown
+              size={16}
+              className="text-white w-3.5 h-3.5 sm:w-4 sm:h-4 rounded-full bg-primary"
+            />
+          </Link>
+        )}
       </div>
 
-      {/* Pagination Dots */}
       <div className="absolute bottom-4 right-4 flex gap-1">
-        {advertisements.map((_, index) => (
+        {advertisements.map((slide, index) => (
           <button
-            key={index}
+            key={slide.key}
+            type="button"
             onClick={() => goToAd(index)}
             className={`w-2 h-2 rounded-full transition-all duration-300 ${
               index === currentAdIndex
@@ -218,7 +288,19 @@ const AdvertisementCarousel = ({
 };
 
 // Hero Section
-const HeroSection = ({ isTabActive }: { isTabActive: boolean }) => {
+const HeroSection = ({
+  isTabActive,
+  carouselAd,
+  normals,
+}: {
+  isTabActive: boolean;
+  carouselAd?: HomePublicAd | null;
+  normals: HomePublicAd[];
+}) => {
+  const n0 = normals[0];
+  const n1 = normals[1];
+  useAdvertisementView(n0?._id);
+  useAdvertisementView(n1?._id);
   // Move state and effect outside of the render function
   const [showCar, setShowCar] = useState(true);
 
@@ -238,26 +320,56 @@ const HeroSection = ({ isTabActive }: { isTabActive: boolean }) => {
         <div className="grid grid-cols-1 lg:grid-cols-12 sm:gap-6">
           {/* Left Column - Advertisement Carousel */}
           <div className="lg:col-span-7 space-y-4 sm:space-y-6">
-            <AdvertisementCarousel isTabActive={isTabActive} />
+            <AdvertisementCarousel
+              isTabActive={isTabActive}
+              carouselAd={carouselAd}
+            />
 
             <div className="grid grid-cols-2 gap-3 sm:gap-6">
               <div className="relative overflow-hidden rounded-xl sm:rounded-2xl shadow-sm group">
                 <Image
                   width={400}
                   height={200}
-                  src={images.dashen.src || "/placeholder.svg"}
-                  alt={images.dashen.alt}
+                  src={
+                    normals[0]?.imageUrls[0] ||
+                    images.dashen.src ||
+                    "/placeholder.svg"
+                  }
+                  alt={normals[0]?.title || images.dashen.alt}
                   className="w-full h-[150px] sm:h-[200px] object-cover transition-transform duration-500 group-hover:scale-105"
+                  unoptimized={
+                    !!normals[0]?.imageUrls[0]?.startsWith("http")
+                  }
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent"></div>
                 <div className="absolute bottom-0 left-0 p-3 sm:p-4 w-full">
-                  <Link
-                    href="https://www.dashensuperapp.com/"
-                    target="_blank"
-                    className="inline-flex items-center gap-1 bg-white/90 backdrop-blur-sm text-primary px-2 py-1 sm:px-3 sm:py-1.5 rounded-full text-xs sm:text-sm shadow-md hover:bg-white transition-colors duration-300"
-                  >
-                    Visit Dashen SuperApp
-                  </Link>
+                  {normals[0]?._id ? (
+                    <a
+                      href={normals[0].link}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={async (e) => {
+                        e.preventDefault();
+                        await trackClick(normals[0]!._id);
+                        window.open(
+                          normals[0]!.link,
+                          "_blank",
+                          "noopener,noreferrer"
+                        );
+                      }}
+                      className="inline-flex items-center gap-1 bg-white/90 backdrop-blur-sm text-primary px-2 py-1 sm:px-3 sm:py-1.5 rounded-full text-xs sm:text-sm shadow-md hover:bg-white transition-colors duration-300"
+                    >
+                      {normals[0].title.slice(0, 28) || "Learn more"}
+                    </a>
+                  ) : (
+                    <Link
+                      href="https://www.dashensuperapp.com/"
+                      target="_blank"
+                      className="inline-flex items-center gap-1 bg-white/90 backdrop-blur-sm text-primary px-2 py-1 sm:px-3 sm:py-1.5 rounded-full text-xs sm:text-sm shadow-md hover:bg-white transition-colors duration-300"
+                    >
+                      Visit Dashen SuperApp
+                    </Link>
+                  )}
                 </div>
               </div>
 
@@ -265,19 +377,45 @@ const HeroSection = ({ isTabActive }: { isTabActive: boolean }) => {
                 <Image
                   width={400}
                   height={200}
-                  src={images.ad.src || "/placeholder.svg"}
-                  alt={images.ad.alt}
+                  src={
+                    normals[1]?.imageUrls[0] ||
+                    images.ad.src ||
+                    "/placeholder.svg"
+                  }
+                  alt={normals[1]?.title || images.ad.alt}
                   className="w-full h-[150px] sm:h-[200px] object-cover transition-transform duration-500 group-hover:scale-105"
+                  unoptimized={
+                    !!normals[1]?.imageUrls[0]?.startsWith("http")
+                  }
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent"></div>
                 <div className="absolute bottom-0 left-0 p-3 sm:p-4 w-full">
-                  <Link
-                    href="/contact-us"
-                    target="_blank"
-                    className="inline-flex items-center gap-1 bg-white/90 backdrop-blur-sm text-primary px-2 py-1 sm:px-3 sm:py-1.5 rounded-full text-xs sm:text-sm shadow-md hover:bg-white transition-colors duration-300"
-                  >
-                    Contact Us
-                  </Link>
+                  {normals[1]?._id ? (
+                    <a
+                      href={normals[1].link}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={async (e) => {
+                        e.preventDefault();
+                        await trackClick(normals[1]!._id);
+                        window.open(
+                          normals[1]!.link,
+                          "_blank",
+                          "noopener,noreferrer"
+                        );
+                      }}
+                      className="inline-flex items-center gap-1 bg-white/90 backdrop-blur-sm text-primary px-2 py-1 sm:px-3 sm:py-1.5 rounded-full text-xs sm:text-sm shadow-md hover:bg-white transition-colors duration-300"
+                    >
+                      {normals[1].title.slice(0, 28) || "Learn more"}
+                    </a>
+                  ) : (
+                    <Link
+                      href="/contact-us"
+                      className="inline-flex items-center gap-1 bg-white/90 backdrop-blur-sm text-primary px-2 py-1 sm:px-3 sm:py-1.5 rounded-full text-xs sm:text-sm shadow-md hover:bg-white transition-colors duration-300"
+                    >
+                      Contact Us
+                    </Link>
+                  )}
                 </div>
               </div>
             </div>
@@ -653,8 +791,28 @@ const FeaturedProducts = ({ isTabActive }: { isTabActive: boolean }) => {
 };
 
 // Single Ad Banner Section
-const SingleAdSection = ({ isTabActive }: { isTabActive: boolean }) => {
+const SingleAdSection = ({
+  isTabActive,
+  banners,
+}: {
+  isTabActive: boolean;
+  banners: HomePublicAd[];
+}) => {
   const [isFirstAd, setIsFirstAd] = useState(true);
+  const b0 = banners[0];
+  const b1 = banners[1];
+
+  const firstDb = b0?.imageUrls?.[0];
+  const secondDb = b1?.imageUrls?.[0];
+
+  const activeBannerId = isFirstAd
+    ? firstDb
+      ? b0?._id
+      : undefined
+    : secondDb
+      ? b1?._id
+      : undefined;
+  useAdvertisementView(activeBannerId);
 
   useEffect(() => {
     if (!isTabActive) return;
@@ -677,14 +835,14 @@ const SingleAdSection = ({ isTabActive }: { isTabActive: boolean }) => {
           className="relative overflow-hidden rounded-xl sm:rounded-2xl shadow-sm group"
         >
           {isFirstAd ? (
-            // First Ad - Similar to left-column style
             <>
               <Image
                 width={1200}
                 height={330}
-                src={images.dashen.src || "/placeholder.svg"}
-                alt={images.dashen.alt}
+                src={firstDb || images.dashen.src || "/placeholder.svg"}
+                alt={b0?.title || images.dashen.alt}
                 className="w-full h-[250px] sm:h-[330px] object-cover transition-transform duration-700 group-hover:scale-105"
+                unoptimized={!!firstDb?.startsWith("http")}
               />
               <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent"></div>
               <div className="absolute bottom-0 left-0 p-4 sm:p-6 w-full">
@@ -692,33 +850,53 @@ const SingleAdSection = ({ isTabActive }: { isTabActive: boolean }) => {
                   Featured Ad
                 </span>
                 <h3 className="text-white text-lg sm:text-2xl font-bold mt-1 sm:mt-2 mb-1 sm:mb-3">
-                  Dashen SuperApp
+                  {b0?.title ?? "Dashen SuperApp"}
                 </h3>
                 <p className="text-white/90 text-xs sm:text-sm mb-2 sm:mb-4 max-w-md">
-                  Discover Ethiopian Best SuperApp. Special offers for early
-                  subscribers.
+                  {b0?.description ??
+                    "Discover Ethiopian Best SuperApp. Special offers for early subscribers."}
                 </p>
-                <Link
-                  href="https://dashensuperapp.com"
-                  className="inline-flex items-center gap-1 sm:gap-2 bg-white/90 backdrop-blur-sm text-primary px-3 py-1.5 sm:px-4 sm:py-2 rounded-full shadow-md hover:bg-white transition-colors duration-300 text-xs sm:text-sm"
-                >
-                  Learn More
-                  <ChevronDown
-                    size={16}
-                    className="text-white w-3.5 h-3.5 sm:w-4 sm:h-4 rounded-full bg-primary"
-                  />
-                </Link>
+                {b0?._id ? (
+                  <a
+                    href={b0.link}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={async (e) => {
+                      e.preventDefault();
+                      await trackClick(b0._id);
+                      window.open(b0.link, "_blank", "noopener,noreferrer");
+                    }}
+                    className="inline-flex items-center gap-1 sm:gap-2 bg-white/90 backdrop-blur-sm text-primary px-3 py-1.5 sm:px-4 sm:py-2 rounded-full shadow-md hover:bg-white transition-colors duration-300 text-xs sm:text-sm"
+                  >
+                    Learn More
+                    <ChevronDown
+                      size={16}
+                      className="text-white w-3.5 h-3.5 sm:w-4 sm:h-4 rounded-full bg-primary"
+                    />
+                  </a>
+                ) : (
+                  <Link
+                    href="https://dashensuperapp.com"
+                    className="inline-flex items-center gap-1 sm:gap-2 bg-white/90 backdrop-blur-sm text-primary px-3 py-1.5 sm:px-4 sm:py-2 rounded-full shadow-md hover:bg-white transition-colors duration-300 text-xs sm:text-sm"
+                  >
+                    Learn More
+                    <ChevronDown
+                      size={16}
+                      className="text-white w-3.5 h-3.5 sm:w-4 sm:h-4 rounded-full bg-primary"
+                    />
+                  </Link>
+                )}
               </div>
             </>
           ) : (
-            // Second Ad - Premium Ad Space
             <>
               <Image
                 width={1200}
                 height={330}
-                src={images.half.src || "/placeholder.svg"}
-                alt={images.half.alt}
+                src={secondDb || images.half.src || "/placeholder.svg"}
+                alt={b1?.title || images.half.alt}
                 className="w-full h-[250px] sm:h-[330px] object-cover transition-transform duration-700 group-hover:scale-105"
+                unoptimized={!!secondDb?.startsWith("http")}
               />
               <div className="absolute inset-0 bg-gradient-to-r from-black/60 to-transparent"></div>
               <div className="absolute top-1/2 left-4 sm:left-16 transform -translate-y-1/2 max-w-lg p-2 sm:p-0">
@@ -726,19 +904,36 @@ const SingleAdSection = ({ isTabActive }: { isTabActive: boolean }) => {
                   Premium Space
                 </span>
                 <h2 className="text-white text-xl sm:text-3xl font-bold mt-2 sm:mt-3 mb-2 sm:mb-4">
-                  Premium Advertisement Space
+                  {b1?.title ?? "Premium Advertisement Space"}
                 </h2>
                 <p className="text-white/90 mb-3 sm:mb-6 text-xs sm:text-base hidden xs:block">
-                  Showcase your brand or product in our premium banner space.
-                  Reach thousands of potential customers daily.
+                  {b1?.description ??
+                    "Showcase your brand or product in our premium banner space. Reach thousands of potential customers daily."}
                 </p>
-                <Link
-                  href="/contact-us"
-                  className="inline-flex items-center gap-1 sm:gap-2 bg-white/90 backdrop-blur-sm text-primary px-3 py-1.5 sm:px-4 sm:py-2 rounded-full shadow-md hover:bg-white transition-colors duration-300 text-xs sm:text-sm"
-                >
-                  Learn More
-                  <ArrowRight className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                </Link>
+                {b1?._id ? (
+                  <a
+                    href={b1.link}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={async (e) => {
+                      e.preventDefault();
+                      await trackClick(b1._id);
+                      window.open(b1.link, "_blank", "noopener,noreferrer");
+                    }}
+                    className="inline-flex items-center gap-1 sm:gap-2 bg-white/90 backdrop-blur-sm text-primary px-3 py-1.5 sm:px-4 sm:py-2 rounded-full shadow-md hover:bg-white transition-colors duration-300 text-xs sm:text-sm"
+                  >
+                    Learn More
+                    <ArrowRight className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                  </a>
+                ) : (
+                  <Link
+                    href="/contact-us"
+                    className="inline-flex items-center gap-1 sm:gap-2 bg-white/90 backdrop-blur-sm text-primary px-3 py-1.5 sm:px-4 sm:py-2 rounded-full shadow-md hover:bg-white transition-colors duration-300 text-xs sm:text-sm"
+                  >
+                    Learn More
+                    <ArrowRight className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                  </Link>
+                )}
               </div>
             </>
           )}
@@ -996,12 +1191,36 @@ export default function Home() {
     }
   }, [phoneCheckUser]);
 
+  const { data: homeAds } = useQuery({
+    queryKey: queryKeys.homeAdvertisements(),
+    queryFn: async () => {
+      const response = await fetch("/api/advertisements/home");
+      if (!response.ok) {
+        throw new Error("Failed to fetch home advertisements");
+      }
+      return response.json() as Promise<{
+        success: boolean;
+        carousel: HomePublicAd | null;
+        banners: HomePublicAd[];
+        normals: HomePublicAd[];
+      }>;
+    },
+    staleTime: 3 * 60 * 1000,
+  });
+
   return (
     <div className="bg-white">
       <div className="px-1 sm:px-3 lg:px-5 xl:px-6 mx-auto">
-        <HeroSection isTabActive={isTabActive} />
+        <HeroSection
+          isTabActive={isTabActive}
+          carouselAd={homeAds?.carousel ?? null}
+          normals={homeAds?.normals ?? []}
+        />
         <FeaturedProducts isTabActive={isTabActive} />
-        <SingleAdSection isTabActive={isTabActive} />
+        <SingleAdSection
+          isTabActive={isTabActive}
+          banners={homeAds?.banners ?? []}
+        />
         <WhyChooseUs />
         <ServicesSection />
       </div>
