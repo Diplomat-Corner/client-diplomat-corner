@@ -14,18 +14,7 @@ const isPublicRoute = createRouteMatcher([
   "/car-for-rent",
   "/about-us",
   "/contact-us",
-  "/api/cars(.*)",
-  "/api/house(.*)",
-  "/api/featured-products(.*)",
-  "/api/advertisements(.*)",
-  "/api/reviews(.*)",
-  "/api/requests(.*)",
-  "/api/messages(.*)",
-  "/api/notifications(.*)",
-  "/api/reports(.*)",
-  "/api/search(.*)",
-  "/api/users(.*)",
-  "/api/webhook(.*)",
+  "/api(.*)",
   "/sign-in(.*)",
   "/sign-up(.*)",
   "/car/:id",
@@ -42,13 +31,6 @@ export default clerkMiddleware(async (auth, req) => {
   }
   if (pathname === "/car" || pathname === "/car/") {
     return NextResponse.redirect(new URL("/car-for-sale", req.url));
-  }
-
-  if (
-    process.env.NODE_ENV === "production" &&
-    pathname.startsWith("/api/webhook/test")
-  ) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
   const requestId = req.headers.get("x-request-id") ?? crypto.randomUUID();

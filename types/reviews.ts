@@ -1,6 +1,4 @@
-import { Document } from "mongoose";
-
-export interface IReview extends Document {
+export interface IReview {
   userId: string;
   targetUserId: string;
   productId: string;

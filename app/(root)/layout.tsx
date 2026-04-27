@@ -1,7 +1,7 @@
 import NavBar from "@/components/nav-bar";
 import Footer from "@/components/footer";
 import { SyncClerkUser } from "@/components/sync-clerk-user";
-import { AnnouncementBanner } from "./page";
+import { AnnouncementBanner } from "@/components/announcement-banner";
 
 export default function RootGroupLayout({
   children,

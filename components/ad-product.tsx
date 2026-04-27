@@ -13,7 +13,10 @@ import {
   Circle,
 } from "lucide-react";
 import { createAdvertisement, scheduleAdvertisement } from "@/lib/actions/advertisements.actions";
-import type { AdvertisementResponse } from "@/lib/models/advertisement.model";
+import type {
+  AdvertisementResponse,
+  AdvertisementPublicationStatus,
+} from "@/lib/models/advertisement.types";
 
 export default function ManageAds() {
   const queryClient = useQueryClient();
@@ -32,7 +35,11 @@ export default function ManageAds() {
     queryFn: async () => {
       const response = await fetch("/api/advertisements");
       if (!response.ok) throw new Error("Failed to fetch ads");
-      return response.json() as Promise<AdvertisementResponse[]>;
+      const data = await response.json();
+      if (Array.isArray(data)) {
+        return data as AdvertisementResponse[];
+      }
+      return (data?.advertisements ?? []) as AdvertisementResponse[];
     },
     staleTime: 60_000,
   });
@@ -62,6 +69,8 @@ export default function ManageAds() {
       ? [formData.imageUrl.trim()]
       : ["https://placehold.co/800x400/png"];
 
+    const status: AdvertisementPublicationStatus =
+      time === "Current" ? "Active" : "Inactive";
     const adDetails = {
       title: formData.companyName || "Untitled",
       description: formData.description,
@@ -69,7 +78,7 @@ export default function ManageAds() {
       link: formData.link.trim() || "https://example.com",
       imageUrls,
       priority: priorityMap[priority],
-      status: time === "Current" ? "Active" : "Expired" as "Active" | "Expired",
+      status,
       hashtags: formData.tags.split("#").filter((tag) => tag.trim()).map((tag) => `#${tag.trim()}`),
     };
 
