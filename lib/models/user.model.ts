@@ -1,6 +1,5 @@
-import mongoose, { Schema, Document } from "mongoose";
-
-export interface IUser extends Document {
+export interface IUser {
+  _id: string;
   clerkId: string;
   email: string;
   firstName: string;
@@ -10,25 +9,6 @@ export interface IUser extends Document {
   imageUrl: string;
   role: "customer" | "admin";
   timestamp: string;
-  createdAt: Date;
-  updatedAt: Date;
+  createdAt?: Date;
+  updatedAt?: Date;
 }
-
-const UserSchema: Schema = new Schema({
-  clerkId: { type: String, required: true, unique: true },
-  firstName: { type: String, required: true },
-  lastName: { type: String },
-  email: { type: String, required: true, unique: true },
-  address: { type: String, required: false },
-  phoneNumber: { type: String },
-  imageUrl: { type: String, required: false },
-  role: {
-    type: String,
-    required: true,
-    enum: ["customer", "admin"],
-  },
-  timestamp: { type: String, required: true },
-});
-
-export default mongoose.models.User ||
-  mongoose.model<IUser>("User", UserSchema);
