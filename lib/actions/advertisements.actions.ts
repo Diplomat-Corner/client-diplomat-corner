@@ -1,42 +1,11 @@
 "use server";
 
-import { connectToDatabase } from "@/lib/db-connect";
-import Advertisement, {
+import { diplomatServerFetch } from "@/lib/diplomat-server";
+import type {
   IAdvertisement,
   AdvertisementResponse,
   AdvertisementPlacement,
-  toPlainAdvertisement,
-} from "@/lib/models/advertisement.model";
-
-const PRIORITY_RANK: Record<string, number> = { High: 0, Medium: 1, Low: 2 };
-
-function isAdActiveInWindow(ad: {
-  status: string;
-  startTime?: string | null;
-  endTime?: string | null;
-}): boolean {
-  if (ad.status !== "Active") return false;
-  const now = Date.now();
-  if (ad.startTime) {
-    const t = new Date(ad.startTime).getTime();
-    if (!Number.isNaN(t) && now < t) return false;
-  }
-  if (ad.endTime) {
-    const t = new Date(ad.endTime).getTime();
-    if (!Number.isNaN(t) && now > t) return false;
-  }
-  return true;
-}
-
-function comparePriorityThenTime(
-  a: { priority: string; timestamp: string },
-  b: { priority: string; timestamp: string }
-): number {
-  const pa = PRIORITY_RANK[a.priority] ?? 99;
-  const pb = PRIORITY_RANK[b.priority] ?? 99;
-  if (pa !== pb) return pa - pb;
-  return (b.timestamp || "").localeCompare(a.timestamp || "");
-}
+} from "@/lib/models/advertisement.types";
 
 export type HomePublicAd = {
   _id: string;
@@ -54,151 +23,80 @@ export async function getHomeAdvertisements(): Promise<{
   banners: HomePublicAd[];
   normals: HomePublicAd[];
 }> {
-  await connectToDatabase();
-
-  const docs = await Advertisement.find({ status: "Active" })
-    .select(
-      "_id title description link imageUrls imageUrl advertisementType priority timestamp startTime endTime status"
-    )
-    .lean();
-
-  const mapped: HomePublicAd[] = [];
-  for (const doc of docs) {
-    const row = doc as {
-      status: string;
-      startTime?: string | null;
-      endTime?: string | null;
-    };
-    if (!isAdActiveInWindow(row)) continue;
-    const base = { ...doc, _id: String(doc._id) };
-    const n = toPlainAdvertisement(base as Record<string, unknown>);
-    mapped.push({
-      _id: n._id as string,
-      title: String(n.title),
-      description: String(n.description),
-      link: String(n.link),
-      imageUrls: n.imageUrls,
-      advertisementType: n.advertisementType,
-      priority: n.priority as HomePublicAd["priority"],
-      timestamp: String(n.timestamp),
-    });
+  const res = await diplomatServerFetch("/api/advertisements/home");
+  if (!res.ok) {
+    return { carousel: null, banners: [], normals: [] };
   }
-
-  const carousels = mapped
-    .filter((x) => x.advertisementType === "carousel")
-    .sort(comparePriorityThenTime);
-  const bannerList = mapped
-    .filter((x) => x.advertisementType === "banner")
-    .sort(comparePriorityThenTime);
-  const normals = mapped
-    .filter((x) => x.advertisementType === "normal")
-    .sort(comparePriorityThenTime)
-    .slice(0, 2);
-
-  return {
-    carousel: carousels[0] ?? null,
-    banners: bannerList.slice(0, 2),
-    normals,
+  return (await res.json()) as {
+    carousel: HomePublicAd | null;
+    banners: HomePublicAd[];
+    normals: HomePublicAd[];
   };
 }
 
 export async function getAllAD(): Promise<AdvertisementResponse[]> {
-  await connectToDatabase();
-
-  const ads = await Advertisement.find({}).lean();
-  if (!ads.length) {
-    return [];
+  const res = await diplomatServerFetch("/api/advertisements");
+  if (!res.ok) {
+    throw new Error("Failed to fetch advertisements");
   }
-  return ads.map((ad) => {
-    const plain = toPlainAdvertisement({
-      ...(ad as object),
-      _id: String(ad._id),
-    } as Record<string, unknown>);
-    return {
-      _id: plain._id as string,
-      title: String(plain.title),
-      description: String(plain.description),
-      targetAudience: (plain.targetAudience as string) ?? null,
-      advertisementType: plain.advertisementType,
-      startTime: (plain.startTime as string) ?? null,
-      endTime: (plain.endTime as string) ?? null,
-      status: plain.status as AdvertisementResponse["status"],
-      priority: plain.priority as AdvertisementResponse["priority"],
-      performanceMetrics: (plain.performanceMetrics as string) ?? null,
-      hashtags: (plain.hashtags as string[]) ?? [],
-      timestamp: String(plain.timestamp),
-      link: String(plain.link),
-      imageUrls: plain.imageUrls,
-      clickCount: Number(plain.clickCount ?? 0),
-      viewCount: Number(plain.viewCount ?? 0),
-    };
-  });
+  const data = await res.json();
+  if (Array.isArray(data)) {
+    return data as AdvertisementResponse[];
+  }
+  if (data?.advertisements) {
+    return data.advertisements as AdvertisementResponse[];
+  }
+  return [];
 }
 
 export async function createAdvertisement(adDetails: Partial<IAdvertisement>) {
-  await connectToDatabase();
-
-  const imageUrls =
-    adDetails.imageUrls?.filter(Boolean) ??
-    (adDetails.imageUrl ? [adDetails.imageUrl] : []);
-
-  const advertisement = new Advertisement({
-    ...adDetails,
-    imageUrls,
-    timestamp: new Date().toISOString(),
-    clickCount: adDetails.clickCount ?? 0,
-    viewCount: adDetails.viewCount ?? 0,
+  const res = await diplomatServerFetch("/api/advertisements", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(adDetails),
   });
-
-  await advertisement.save();
-  return { success: true, id: advertisement._id.toString() };
+  if (!res.ok) {
+    throw new Error("Failed to create advertisement");
+  }
+  return (await res.json()) as { success: boolean; id?: string };
 }
 
-export async function updateAdvertisement(adId: string, updatedDetails: Partial<IAdvertisement>) {
-  await connectToDatabase();
-
-  const advertisement = await Advertisement.findById(adId);
-  if (!advertisement) {
-    throw new Error("Advertisement not found");
+export async function updateAdvertisement(
+  adId: string,
+  updatedDetails: Partial<IAdvertisement>
+) {
+  const res = await diplomatServerFetch(`/api/advertisements/${adId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(updatedDetails),
+  });
+  if (!res.ok) {
+    throw new Error("Failed to update advertisement");
   }
-
-  if (advertisement.status === "Inactive") {
-    throw new Error("Cannot edit an inactive advertisement");
-  }
-
-  await Advertisement.findByIdAndUpdate(adId, updatedDetails);
   return { success: true };
 }
 
 export async function deleteAdvertisement(adId: string) {
-  await connectToDatabase();
-
-  await Advertisement.findByIdAndDelete(adId);
+  const res = await diplomatServerFetch(`/api/advertisements/${adId}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) {
+    throw new Error("Failed to delete advertisement");
+  }
   return { success: true };
 }
 
 export async function getAdvertisementDetails(adId: string) {
-  await connectToDatabase();
-
-  const advertisement = await Advertisement.findById(adId);
-  if (!advertisement) {
+  const res = await diplomatServerFetch(`/api/advertisements/${adId}`);
+  if (!res.ok) {
     throw new Error("Advertisement not found");
   }
-
-  return {
-    ...advertisement.toObject(),
-    _id: advertisement._id.toString(),
-  };
+  const data = (await res.json()) as { advertisement?: unknown } & Record<string, unknown>;
+  return data.advertisement ?? data;
 }
 
 export async function listAllAdvertisements() {
-  await connectToDatabase();
-
-  const advertisements = await Advertisement.find();
-  return advertisements.map((ad) => ({
-    ...ad.toObject(),
-    _id: ad._id.toString(),
-  }));
+  return getAllAD();
 }
 
 export async function scheduleAdvertisement(
@@ -206,55 +104,70 @@ export async function scheduleAdvertisement(
   startTime: string,
   endTime: string
 ) {
-  await connectToDatabase();
-
-  const imageUrls =
-    adDetails.imageUrls?.filter(Boolean) ??
-    (adDetails.imageUrl ? [adDetails.imageUrl] : []);
-
-  const advertisement = new Advertisement({
-    ...adDetails,
-    imageUrls,
-    startTime,
-    endTime,
-    status: "Scheduled",
-    timestamp: new Date().toISOString(),
-    clickCount: 0,
-    viewCount: 0,
+  const res = await diplomatServerFetch("/api/advertisements", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      ...adDetails,
+      startTime,
+      endTime,
+      status: "Active",
+      clickCount: 0,
+      viewCount: 0,
+    }),
   });
-
-  await advertisement.save();
-  return { success: true, id: advertisement._id.toString() };
+  if (!res.ok) {
+    throw new Error("Failed to schedule advertisement");
+  }
+  return (await res.json()) as { success: boolean; id?: string };
 }
 
-export async function setAdvertisementPriority(adId: string, priority: "High" | "Medium" | "Low") {
-  await connectToDatabase();
-
-  await Advertisement.findByIdAndUpdate(adId, { priority });
+export async function setAdvertisementPriority(
+  adId: string,
+  priority: "High" | "Medium" | "Low"
+) {
+  const res = await diplomatServerFetch(`/api/advertisements/${adId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ priority }),
+  });
+  if (!res.ok) {
+    throw new Error("Failed to set priority");
+  }
   return { success: true };
 }
 
 export async function activateAdvertisement(adId: string) {
-  await connectToDatabase();
-
-  await Advertisement.findByIdAndUpdate(adId, { status: "Active" });
+  const res = await diplomatServerFetch(`/api/advertisements/${adId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status: "Active" }),
+  });
+  if (!res.ok) {
+    throw new Error("Failed to activate");
+  }
   return { success: true };
 }
 
 export async function deactivateAdvertisement(adId: string) {
-  await connectToDatabase();
-
-  await Advertisement.findByIdAndUpdate(adId, { status: "Inactive" });
+  const res = await diplomatServerFetch(`/api/advertisements/${adId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status: "Inactive" }),
+  });
+  if (!res.ok) {
+    throw new Error("Failed to deactivate");
+  }
   return { success: true };
 }
 
 export async function getAdvertisementPerformance(adId: string) {
-  await connectToDatabase();
-
-  const advertisement = await Advertisement.findById(adId);
-  if (!advertisement) {
+  const res = await diplomatServerFetch(
+    `/api/advertisements/${adId}?analytics=true`
+  );
+  if (!res.ok) {
     throw new Error("Advertisement not found");
   }
-
-  return advertisement.performanceMetrics || "No metrics available";
+  const data = await res.json();
+  return (data?.metrics as string) || "No metrics available";
 }
