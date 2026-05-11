@@ -7,7 +7,7 @@ import Link from "next/link";
 import { Button } from "./ui/button";
 import { useState, useEffect, useRef, useCallback } from "react";
 import MaxWidthWrapper from "./max-width-wrapper";
-import { Bell, Loader2, Menu, Search } from "lucide-react";
+import { Bell, Loader2, Menu, MessageCircle, Search } from "lucide-react";
 
 // Define the type for search results based on your API response
 interface SearchResult {
@@ -460,6 +460,19 @@ const NavBar: React.FC = () => {
                         />
                       </div>
                       <Link
+                        href="/messages"
+                        onClick={handleMobileMenuClose}
+                      >
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="relative bg-white/15 hover:bg-white/25 p-2 rounded-full border border-white/20 hover:border-white/40 hover:shadow-md transition-all duration-300"
+                        >
+                          <MessageCircle className="h-5 w-5 text-white group-hover:text-white/80 transition-colors" />
+                          <span className="sr-only">Messages</span>
+                        </Button>
+                      </Link>
+                      <Link
                         href="/notifications"
                         onClick={handleMobileMenuClose}
                       >
@@ -667,6 +680,20 @@ const NavBar: React.FC = () => {
                         },
                       }}
                     />
+                    <Link
+                      href="/messages"
+                      onClick={handleMobileMenuClose}
+                      className="flex-1"
+                    >
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="w-full relative bg-gradient-to-r from-gray-50 to-white p-2 rounded-full border border-gray-200 hover:border-primary hover:shadow-md transition-all duration-300"
+                      >
+                        <MessageCircle className="h-5 w-5 text-gray-700 group-hover:text-primary transition-colors" />
+                        <span className="sr-only">Messages</span>
+                      </Button>
+                    </Link>
                     <Link
                       href="/notifications"
                       onClick={handleMobileMenuClose}

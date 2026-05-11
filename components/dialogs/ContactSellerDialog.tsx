@@ -2,17 +2,21 @@
 
 import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
+import { useUser } from "@clerk/nextjs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
+import { PhoneNumberPopup } from "@/components/PhoneNumberPopup";
 
 export interface ContactSellerDialogProps {
   isOpen: boolean;
   onClose: () => void;
   productType: string;
   sellerName: string;
+  sellerEmail?: string;
+  sellerPhone?: string;
   carId: string;
   sellerId: string;
 }
@@ -22,10 +26,14 @@ export function ContactSellerDialog({
   onClose,
   productType,
   sellerName,
+  sellerEmail,
+  sellerPhone,
   carId,
   sellerId,
 }: ContactSellerDialogProps) {
   const { toast } = useToast();
+  const { user } = useUser();
+  const [openPhonePopup, setOpenPhonePopup] = useState(false);
   const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
@@ -45,16 +53,32 @@ export function ContactSellerDialog({
 
   const sendMessageMutation = useMutation({
     mutationFn: async () => {
-      const response = await fetch('/api/messages', {
+      const listingLink =
+        typeof window !== "undefined"
+          ? `${window.location.origin}/car/${carId}`
+          : `/car/${carId}`;
+      const response = await fetch('/api/messages/threads', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           ...formData,
-          carId,
-          sellerId,
-          productType,
+          topicType: "car-inquiry",
+          topicId: carId,
+          subject: `Car Inquiry: ${productType}`,
+          meta: {
+            listingId: carId,
+            listingLink,
+            listerName: sellerName,
+            listerEmail: sellerEmail || "unknown@diplomatcorner.net",
+            listerPhone: sellerPhone || "Not provided",
+            inquirerName: `${formData.firstName} ${formData.lastName}`.trim(),
+            inquirerEmail: formData.email,
+            inquirerPhone: formData.phone,
+            sellerId,
+            productType,
+          },
         }),
       });
 
@@ -85,14 +109,19 @@ export function ContactSellerDialog({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!user?.unsafeMetadata?.phoneNumber && !formData.phone) {
+      setOpenPhonePopup(true);
+      return;
+    }
     sendMessageMutation.mutate();
   };
 
   const isLoading = sendMessageMutation.isPending;
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[500px]">
+    <>
+      <Dialog open={isOpen} onOpenChange={onClose}>
+        <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
           <DialogTitle>Contact Seller</DialogTitle>
           <DialogDescription>
@@ -203,7 +232,12 @@ export function ContactSellerDialog({
             </Button>
           </div>
         </form>
-      </DialogContent>
-    </Dialog>
+        </DialogContent>
+      </Dialog>
+      <PhoneNumberPopup
+        isOpen={openPhonePopup}
+        onClose={() => setOpenPhonePopup(false)}
+      />
+    </>
   );
 }

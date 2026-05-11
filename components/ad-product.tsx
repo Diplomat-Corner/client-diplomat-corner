@@ -13,21 +13,10 @@ import {
   Circle,
 } from "lucide-react";
 import { createAdvertisement, scheduleAdvertisement } from "@/lib/actions/advertisements.actions";
-
-interface AdvertisementResponse {
-  id: string;
-  title: string;
-  description: string;
-  targetAudience?: string | null;
-  advertisementType: string;
-  startTime?: string | null;
-  endTime?: string | null;
-  status: "Active" | "Inactive" | "Scheduled" | "Expired";
-  priority: "High" | "Medium" | "Low";
-  performanceMetrics?: string | null;
-  hashtags: string[];
-  timestamp: string;
-}
+import type {
+  AdvertisementResponse,
+  AdvertisementPublicationStatus,
+} from "@/lib/models/advertisement.types";
 
 export default function ManageAds() {
   const queryClient = useQueryClient();
@@ -46,7 +35,11 @@ export default function ManageAds() {
     queryFn: async () => {
       const response = await fetch("/api/advertisements");
       if (!response.ok) throw new Error("Failed to fetch ads");
-      return response.json() as Promise<AdvertisementResponse[]>;
+      const data = await response.json();
+      if (Array.isArray(data)) {
+        return data as AdvertisementResponse[];
+      }
+      return (data?.advertisements ?? []) as AdvertisementResponse[];
     },
     staleTime: 60_000,
   });
@@ -58,7 +51,9 @@ export default function ManageAds() {
     endTime: "",
     tags: "",
     description: "",
-    advertisementType: "Banner",
+    advertisementType: "normal" as "carousel" | "normal" | "banner",
+    link: "https://example.com",
+    imageUrl: "",
   });
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -70,21 +65,29 @@ export default function ManageAds() {
       Low: "Low",
     };
 
+    const imageUrls = formData.imageUrl.trim()
+      ? [formData.imageUrl.trim()]
+      : ["https://placehold.co/800x400/png"];
+
+    const status: AdvertisementPublicationStatus =
+      time === "Current" ? "Active" : "Inactive";
     const adDetails = {
       title: formData.companyName || "Untitled",
       description: formData.description,
       advertisementType: formData.advertisementType,
+      link: formData.link.trim() || "https://example.com",
+      imageUrls,
       priority: priorityMap[priority],
-      status: time === "Current" ? "Active" : "Expired" as "Active" | "Expired",
+      status,
       hashtags: formData.tags.split("#").filter((tag) => tag.trim()).map((tag) => `#${tag.trim()}`),
     };
 
     startTransition(async () => {
       try {
-        if (!formData.companyName || !formData.description || !formData.advertisementType) {
+        if (!formData.companyName || !formData.description) {
           setSubmitResult({
             success: false,
-            message: "Please fill in all required fields: Company Name, Description, and Advertisement Type.",
+            message: "Please fill in company name and description.",
           });
           return;
         }
@@ -108,11 +111,16 @@ export default function ManageAds() {
           endTime: "",
           tags: "",
           description: "",
-          advertisementType: "Banner",
+          advertisementType: "normal",
+          link: "https://example.com",
+          imageUrl: "",
         });
 
         void queryClient.invalidateQueries({
           queryKey: queryKeys.advertisements(),
+        });
+        void queryClient.invalidateQueries({
+          queryKey: queryKeys.homeAdvertisements(),
         });
       } catch (error) {
         setSubmitResult({
@@ -151,31 +159,36 @@ export default function ManageAds() {
         <main className="flex-1 bg-white p-6 rounded-3xl shadow-md border-2 border-primary grid grid-cols-2 gap-4">
           <div>
             <div className="grid grid-cols-4 gap-4 mb-4">
-              <ul className="flex space-x-4">
-                <li
-                  className={`border border-primary px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-primary hover:text-white cursor-pointer active:bg-secondary ${
-                    formData.advertisementType === "Wide" ? "bg-primary text-white" : ""
-                  }`}
-                  onClick={() => setFormData({ ...formData, advertisementType: "Wide" })}
-                >
-                  <Layout size={16} /> Wide
-                </li>
-                <li
-                  className={`border border-primary px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-primary hover:text-white cursor-pointer active:bg-secondary ${
-                    formData.advertisementType === "Banner" ? "bg-primary text-white" : ""
-                  }`}
-                  onClick={() => setFormData({ ...formData, advertisementType: "Banner" })}
-                >
-                  <RectangleHorizontal size={16} /> Banner
-                </li>
-                <li
-                  className={`border border-primary px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-primary hover:text-white cursor-pointer active:bg-secondary ${
-                    formData.advertisementType === "Small" ? "bg-primary text-white" : ""
-                  }`}
-                  onClick={() => setFormData({ ...formData, advertisementType: "Small" })}
-                >
-                  <Square size={16} /> Small
-                </li>
+              <ul className="flex flex-wrap gap-2">
+                {(
+                  [
+                    { id: "carousel" as const, label: "Carousel", icon: Layout },
+                    {
+                      id: "normal" as const,
+                      label: "Normal",
+                      icon: Square,
+                    },
+                    {
+                      id: "banner" as const,
+                      label: "Banner",
+                      icon: RectangleHorizontal,
+                    },
+                  ] as const
+                ).map(({ id, label, icon: Icon }) => (
+                  <li
+                    key={id}
+                    className={`border border-primary px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-primary hover:text-white cursor-pointer active:bg-secondary ${
+                      formData.advertisementType === id
+                        ? "bg-primary text-white"
+                        : ""
+                    }`}
+                    onClick={() =>
+                      setFormData({ ...formData, advertisementType: id })
+                    }
+                  >
+                    <Icon size={16} /> {label}
+                  </li>
+                ))}
               </ul>
             </div>
 
@@ -203,6 +216,32 @@ export default function ManageAds() {
                   value={formData.product}
                   onChange={(e) =>
                     setFormData({ ...formData, product: e.target.value })
+                  }
+                />
+              </div>
+              <div className="col-span-2">
+                <label className="block text-sm font-semibold text-primary">
+                  Destination link (URL)
+                </label>
+                <input
+                  className="border-b-2 border-primary w-full p-2 focus:outline-none bg-secondary"
+                  placeholder="https://"
+                  value={formData.link}
+                  onChange={(e) =>
+                    setFormData({ ...formData, link: e.target.value })
+                  }
+                />
+              </div>
+              <div className="col-span-2">
+                <label className="block text-sm font-semibold text-primary">
+                  Image URL (optional — placeholder used if empty)
+                </label>
+                <input
+                  className="border-b-2 border-primary w-full p-2 focus:outline-none bg-secondary"
+                  placeholder="https://…"
+                  value={formData.imageUrl}
+                  onChange={(e) =>
+                    setFormData({ ...formData, imageUrl: e.target.value })
                   }
                 />
               </div>
@@ -358,7 +397,7 @@ export default function ManageAds() {
               {ads.length > 0 ? (
                 <ul className="space-y-2">
                   {ads.map((ad) => (
-                    <li key={ad.id} className="text-sm">
+                    <li key={ad._id} className="text-sm">
                       {ad.title} - {ad.advertisementType} ({ad.status})
                     </li>
                   ))}
