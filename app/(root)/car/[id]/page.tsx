@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
+import { useUser } from "@clerk/nextjs";
 import { useParams, useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/query-keys";
@@ -22,6 +23,7 @@ import {
 } from "lucide-react";
 import type { ICar } from "@/lib/models/car.model";
 import { ContactSellerDialog } from "@/components/dialogs/ContactSellerDialog";
+import { PhoneNumberPopup } from "@/components/PhoneNumberPopup";
 import { CarDetailLoadingSkeleton } from "@/components/loading-effects";
 import { ReviewsSection } from "@/components/reviews";
 import { motion, AnimatePresence } from "framer-motion";
@@ -41,6 +43,9 @@ export default function CarDetails() {
   const router = useRouter();
   const id = params.id as string;
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [showPhonePopup, setShowPhonePopup] = useState(false);
+  const [viewerPhone, setViewerPhone] = useState("");
+  const { user: viewer } = useUser();
 
   // State for image carousel
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
@@ -79,7 +84,7 @@ export default function CarDetails() {
       clerkId: raw.userId,
       firstName: s.firstName,
       lastName: s.lastName ?? "",
-      email: "",
+      email: s.email ?? "",
       imageUrl: s.imageUrl,
       phoneNumber: s.phoneNumber ?? "",
       role: s.role,
@@ -100,6 +105,29 @@ export default function CarDetails() {
   useEffect(() => {
     setCurrentImageIndex(0);
   }, [id]);
+
+  useEffect(() => {
+    const loadViewerPhone = async () => {
+      if (!viewer?.id) {
+        setViewerPhone("");
+        return;
+      }
+      try {
+        const res = await fetch(`/api/users/${viewer.id}`);
+        if (!res.ok) {
+          setViewerPhone("");
+          return;
+        }
+        const data = await res.json();
+        setViewerPhone(
+          typeof data?.user?.phoneNumber === "string" ? data.user.phoneNumber : ""
+        );
+      } catch {
+        setViewerPhone("");
+      }
+    };
+    void loadViewerPhone();
+  }, [viewer?.id, showPhonePopup]);
 
   const nextImage = () => {
     setCurrentImageIndex((prevIndex) =>
@@ -504,14 +532,16 @@ export default function CarDetails() {
             <div className="mt-4">
               <button
                 onClick={() => {
-                  if (!user) {
+                  if (!viewer) {
                     // Redirect to sign-in page if user is not authenticated
                     router.push('/sign-in');
                     return;
                   }
-                  if (user.role !== "admin") {
-                    setIsDialogOpen(true);
+                  if (!viewerPhone.trim()) {
+                    setShowPhonePopup(true);
+                    return;
                   }
+                  setIsDialogOpen(true);
                 }}
                 className="w-full bg-primary text-white font-semibold py-3 px-6 rounded-md hover:bg-primary/80 transition-colors duration-200"
               >
@@ -546,8 +576,14 @@ export default function CarDetails() {
         onClose={() => setIsDialogOpen(false)}
         productType="car"
         sellerName={user?.firstName + ' ' + user?.lastName || 'the seller'}
+        sellerEmail={user?.email}
+        sellerPhone={user?.phoneNumber}
         carId={car._id}
         sellerId={car.userId}
+      />
+      <PhoneNumberPopup
+        isOpen={showPhonePopup}
+        onClose={() => setShowPhonePopup(false)}
       />
     </div>
   );
