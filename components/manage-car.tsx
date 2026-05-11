@@ -22,6 +22,7 @@ import ErrorDialog from "./dialogs/error-dialog";
 import ValidationDialog from "./dialogs/validation-dialog";
 import SuccessDialog from "./dialogs/success-dialog";
 import PaymentInfo from "./payment-info";
+import { PhoneNumberPopup } from "@/components/PhoneNumberPopup";
 import { useListingImages } from "@/components/manage-listing/useListingImages";
 import { useListingReceipt } from "@/components/manage-listing/useListingReceipt";
 import { appendCommonUploadFields } from "@/components/manage-listing/append-upload-fields";
@@ -98,6 +99,8 @@ const ManageCar: React.FC<ManageCarProps> = ({
     { name: string; label: string; valid: boolean }[]
   >([]);
   const [createdCarId, setCreatedCarId] = useState<string>("");
+  const [phonePopupOpen, setPhonePopupOpen] = useState(false);
+  const [profilePhone, setProfilePhone] = useState("");
 
   const {
     images,
@@ -123,6 +126,23 @@ const ManageCar: React.FC<ManageCarProps> = ({
       setFormData((prev) => ({ ...prev, userId }));
     }
   }, [userId, isLoaded]);
+
+  useEffect(() => {
+    const loadPhone = async () => {
+      if (!user?.id) return;
+      try {
+        const res = await fetch(`/api/users/${user.id}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        setProfilePhone(
+          typeof data?.user?.phoneNumber === "string" ? data.user.phoneNumber : ""
+        );
+      } catch {
+        setProfilePhone("");
+      }
+    };
+    void loadPhone();
+  }, [user?.id, phonePopupOpen]);
 
   useEffect(() => {
     // When the advertisement type changes, set default payment method
@@ -213,6 +233,16 @@ const ManageCar: React.FC<ManageCarProps> = ({
 
   const handleSend = async () => {
     setIsSending(true);
+
+    if (
+      !isEditMode &&
+      formData.advertisementType === "Rent" &&
+      !profilePhone.trim()
+    ) {
+      setIsSending(false);
+      setPhonePopupOpen(true);
+      return;
+    }
 
     if (!validateForm()) {
       setShowValidationDialog(true);
@@ -943,6 +973,10 @@ const ManageCar: React.FC<ManageCarProps> = ({
         productName={formData.name}
         productId={createdCarId}
         productType="car"
+      />
+      <PhoneNumberPopup
+        isOpen={phonePopupOpen}
+        onClose={() => setPhonePopupOpen(false)}
       />
     </section>
   );

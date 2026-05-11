@@ -2,6 +2,7 @@
 export type SellerPreview = {
   firstName: string;
   lastName?: string;
+  email?: string;
   imageUrl: string;
   role: "customer" | "admin";
   phoneNumber?: string;

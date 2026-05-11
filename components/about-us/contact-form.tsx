@@ -83,12 +83,15 @@ const ContactForm: React.FC = () => {
     const originalMessage = formData.message;
     startTransition(async () => {
       try {
-        const response = await fetch("/api/messages", {
+        const response = await fetch("/api/messages/threads", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify(formData),
+          body: JSON.stringify({
+            ...formData,
+            topicType: "contact",
+          }),
         });
 
         const result = await response.json();
