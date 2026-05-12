@@ -206,30 +206,7 @@ export function useListingBrowse(
     staleTime: 60_000,
   });
 
-  const carRentQuery = useQuery({
-    queryKey: queryKeys.cars.browse("page", {
-      page: 1,
-      excludeUserId: userId ?? "",
-      advertisementType: "Rent",
-      includeSeller: true,
-      limit: 10000,
-    }),
-    queryFn: async (): Promise<PagePayload> => {
-      const url = `/api/cars?limit=10000&excludeUserId=${userId || ""}${
-        advertisementType ? `&advertisementType=${advertisementType}` : ""
-      }&includeSeller=1`;
-      const res = await fetch(url);
-      const data = (await res.json()) as PagePayload;
-      if (!data.success) {
-        throw new Error(data.error || "Failed to fetch cars");
-      }
-      return data;
-    },
-    enabled: isLoaded && mode === "car" && advertisementType === "Rent",
-    staleTime: 60_000,
-  });
-
-  const carSaleInfinite = useInfiniteQuery({
+  const carBrowseInfinite = useInfiniteQuery({
     queryKey: queryKeys.cars.browse("infinite", {
       excludeUserId: userId ?? "",
       advertisementType: advertisementType ?? "",
@@ -253,8 +230,7 @@ export function useListingBrowse(
     initialPageParam: 1,
     getNextPageParam: (last) =>
       last.pagination?.hasMore ? last.pagination.page + 1 : undefined,
-    enabled:
-      isLoaded && mode === "car" && advertisementType !== "Rent",
+    enabled: isLoaded && mode === "car" && !!advertisementType,
     staleTime: 60_000,
   });
 
@@ -266,32 +242,24 @@ export function useListingBrowse(
         (p.houses ?? []).map((h) => normalizeHouse(h as Record<string, unknown>))
       ) as IHouse[];
     }
-    if (advertisementType === "Rent") {
-      const raw = carRentQuery.data?.cars ?? [];
-      return raw.map((c) =>
-        normalizeCar(c as Record<string, unknown>)
+    if (mode === "car") {
+      const pages = carBrowseInfinite.data?.pages;
+      if (!pages?.length) return [];
+      return pages.flatMap((p) =>
+        (p.cars ?? []).map((c) => normalizeCar(c as Record<string, unknown>))
       ) as ICar[];
     }
-    const pages = carSaleInfinite.data?.pages;
-    if (!pages?.length) return [];
-    return pages.flatMap((p) =>
-      (p.cars ?? []).map((c) => normalizeCar(c as Record<string, unknown>))
-    ) as ICar[];
+    return [];
   }, [
     mode,
     advertisementType,
     houseInfinite.data?.pages,
-    carRentQuery.data?.cars,
-    carSaleInfinite.data?.pages,
+    carBrowseInfinite.data?.pages,
   ]);
 
   useEffect(() => {
     const err =
-      mode === "house"
-        ? houseInfinite.error
-        : advertisementType === "Rent"
-          ? carRentQuery.error
-          : carSaleInfinite.error;
+      mode === "house" ? houseInfinite.error : carBrowseInfinite.error;
     if (err) {
       setError(
         mode === "house"
@@ -305,8 +273,7 @@ export function useListingBrowse(
     mode,
     advertisementType,
     houseInfinite.error,
-    carRentQuery.error,
-    carSaleInfinite.error,
+    carBrowseInfinite.error,
   ]);
 
   useEffect(() => {
@@ -318,30 +285,22 @@ export function useListingBrowse(
     !isLoaded ||
     (mode === "house"
       ? houseInfinite.isPending
-      : advertisementType === "Rent"
-        ? carRentQuery.isPending
-        : carSaleInfinite.isPending);
+      : carBrowseInfinite.isPending);
 
   const isLoadingMore =
     mode === "house"
       ? houseInfinite.isFetchingNextPage
-      : advertisementType === "Rent"
-        ? false
-        : carSaleInfinite.isFetchingNextPage;
+      : carBrowseInfinite.isFetchingNextPage;
 
   const hasMore =
     mode === "house"
       ? houseInfinite.hasNextPage ?? false
-      : advertisementType === "Rent"
-        ? false
-        : carSaleInfinite.hasNextPage ?? false;
+      : carBrowseInfinite.hasNextPage ?? false;
 
   const currentPage =
     mode === "house"
       ? houseInfinite.data?.pages?.length ?? 1
-      : advertisementType === "Rent"
-        ? 1
-        : carSaleInfinite.data?.pages?.length ?? 1;
+      : carBrowseInfinite.data?.pages?.length ?? 1;
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -487,16 +446,15 @@ export function useListingBrowse(
     if (isLoadingMore || !hasMore) return;
     if (mode === "house") {
       void houseInfinite.fetchNextPage();
-    } else if (mode === "car" && advertisementType !== "Rent") {
-      void carSaleInfinite.fetchNextPage();
+    } else {
+      void carBrowseInfinite.fetchNextPage();
     }
   }, [
     mode,
-    advertisementType,
     isLoadingMore,
     hasMore,
     houseInfinite.fetchNextPage,
-    carSaleInfinite.fetchNextPage,
+    carBrowseInfinite.fetchNextPage,
   ]);
 
   const bannerTitle =
@@ -517,10 +475,7 @@ export function useListingBrowse(
           : "Listings"
       : "Listings";
 
-  const showLoadMore =
-    mode === "house"
-      ? hasMore
-      : hasMore && advertisementType !== "Rent";
+  const showLoadMore = hasMore;
 
   const countLabel =
     mode === "house"

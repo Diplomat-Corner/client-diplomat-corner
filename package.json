@@ -6,6 +6,7 @@
     "node": "20.x"
   },
   "scripts": {
+    "clean": "rm -rf .next",
     "dev": "next dev",
     "build": "node ./scripts/run-without-broken-localstorage-flag.mjs build",
     "start": "next start",
