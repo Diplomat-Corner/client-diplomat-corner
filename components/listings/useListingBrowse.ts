@@ -19,7 +19,7 @@ export type ListingBrowseMode = "house" | "car";
 const ITEMS_PER_PAGE = 20;
 
 const SORT_OPTIONS_HOUSE = [
-  { value: "Default", label: "Default" },
+  { value: "Default", label: "Latest first" },
   { value: "Price Low to High", label: "Price: Low to High" },
   { value: "Price High to Low", label: "Price: High to Low" },
   { value: "Size Small to Large", label: "Size: Small to Large" },
@@ -27,7 +27,7 @@ const SORT_OPTIONS_HOUSE = [
 ];
 
 const SORT_OPTIONS_CAR = [
-  { value: "Default", label: "Default" },
+  { value: "Default", label: "Latest first" },
   { value: "Price Low to High", label: "Price: Low to High" },
   { value: "Price High to Low", label: "Price: High to Low" },
   { value: "Size Small to Large", label: "Mileage: Low to High" },
@@ -63,6 +63,33 @@ function normalizeCar(
   } as ICar & { seller?: SellerPreview };
 }
 
+function listingRecencyMs(item: IHouse | ICar): number {
+  const r = item as unknown as Record<string, unknown>;
+  const tryParse = (v: unknown): number => {
+    if (v == null) return 0;
+    if (typeof v === "string" && v.trim() !== "") {
+      const t = Date.parse(v);
+      return Number.isNaN(t) ? 0 : t;
+    }
+    if (v instanceof Date) return v.getTime();
+    if (typeof v === "number" && Number.isFinite(v)) return v;
+    return 0;
+  };
+  const created = tryParse(r.createdAt);
+  const updated = tryParse(r.updatedAt);
+  const stamp = tryParse(r.timestamp);
+  const idHex = typeof r._id === "string" ? r._id : "";
+  let idTime = 0;
+  if (idHex.length === 24 && /^[0-9a-fA-F]+$/.test(idHex)) {
+    idTime = parseInt(idHex.slice(0, 8), 16) * 1000;
+  }
+  return Math.max(created, updated, stamp, idTime);
+}
+
+function sortListingsLatestFirst(list: (IHouse | ICar)[]): (IHouse | ICar)[] {
+  return [...list].sort((a, b) => listingRecencyMs(b) - listingRecencyMs(a));
+}
+
 function applySortOrder(
   list: (IHouse | ICar)[],
   order: string,
@@ -85,7 +112,7 @@ function applySortOrder(
         h.sort((a, b) => b.size - a.size);
         break;
       default:
-        return list;
+        return sortListingsLatestFirst(list);
     }
     return h;
   }
@@ -104,9 +131,111 @@ function applySortOrder(
       c.sort((a, b) => b.mileage - a.mileage);
       break;
     default:
-      return list;
+      return sortListingsLatestFirst(list);
   }
   return c;
+}
+
+function groupActiveFilters(
+  filters: string[],
+  filterOptions: FilterOption[]
+): Record<string, string[]> {
+  return filters.reduce(
+    (acc, filter) => {
+      const option = filterOptions.find((opt) => opt.value === filter);
+      if (option) {
+        if (!acc[option.category]) acc[option.category] = [];
+        acc[option.category].push(filter);
+      }
+      return acc;
+    },
+    {} as Record<string, string[]>
+  );
+}
+
+function filterListingsByGroups(
+  fullItems: (IHouse | ICar)[],
+  grouped: Record<string, string[]>,
+  mode: ListingBrowseMode
+): (IHouse | ICar)[] {
+  if (mode === "house") {
+    return (fullItems as IHouse[]).filter((house) => {
+      return Object.entries(grouped).every(([category, values]) => {
+        if (values.length === 0) return true;
+        return values.some((value) => {
+          switch (category) {
+            case "houseType":
+              return house.houseType === value;
+            case "bedroom":
+              if (value === "4+") return house.bedroom >= 4;
+              return house.bedroom === parseInt(value, 10);
+            case "bathroom":
+              if (value === "3+") return house.bathroom >= 3;
+              return house.bathroom === parseInt(value, 10);
+            case "size": {
+              const [minSize, maxSize] = value.split("-").map(Number);
+              return (
+                house.size >= minSize &&
+                (maxSize ? house.size <= maxSize : true)
+              );
+            }
+            case "price": {
+              const [minPrice, maxPrice] = value.split("-").map(Number);
+              return (
+                house.price >= minPrice &&
+                (maxPrice ? house.price <= maxPrice : true)
+              );
+            }
+            case "essentials":
+              return house.essentials?.includes(value);
+            default:
+              return false;
+          }
+        });
+      });
+    }) as (IHouse | ICar)[];
+  }
+  return (fullItems as ICar[]).filter((car) => {
+    return Object.entries(grouped).every(([category, values]) => {
+      if (values.length === 0) return true;
+      return values.some((value) => {
+        switch (category) {
+          case "advertisementType":
+            return (
+              car.advertisementType === (value === "For Rent" ? "Rent" : "Sale")
+            );
+          case "bodyType":
+            return car.bodyType === value;
+          case "fuel":
+            return car.fuel === value;
+          case "transmission":
+            return car.transmission === value;
+          default:
+            return false;
+        }
+      });
+    });
+  }) as (IHouse | ICar)[];
+}
+
+function itemsForBrowseState(
+  browseFlat: (IHouse | ICar)[],
+  activeFilters: string[],
+  sortOrder: string,
+  mode: ListingBrowseMode,
+  filterOptions: FilterOption[]
+): (IHouse | ICar)[] {
+  const base = sortListingsLatestFirst(browseFlat);
+  if (activeFilters.length === 0) {
+    return sortOrder === "Default"
+      ? base
+      : applySortOrder(base, sortOrder, mode);
+  }
+  const grouped = groupActiveFilters(activeFilters, filterOptions);
+  const filtered = filterListingsByGroups(base, grouped, mode);
+  return sortOrder === "Default"
+    ? filtered
+    : applySortOrder(filtered, sortOrder, mode);
 }
 
 type PagePayload = {
@@ -141,10 +270,13 @@ export function useListingBrowse(
     "listings"
   );
 
-  const filterOptions: FilterOption[] =
-    mode === "house"
-      ? HOUSE_FILTER_OPTIONS
-      : getCarFilterOptions(advertisementType);
+  const filterOptions: FilterOption[] = useMemo(
+    () =>
+      mode === "house"
+        ? HOUSE_FILTER_OPTIONS
+        : getCarFilterOptions(advertisementType),
+    [mode, advertisementType]
+  );
 
   const sortOptions =
     mode === "house" ? SORT_OPTIONS_HOUSE : SORT_OPTIONS_CAR;
@@ -172,6 +304,7 @@ export function useListingBrowse(
     },
     enabled: isLoaded && !!userId,
     staleTime: 60_000,
+    select: (data) => sortListingsLatestFirst(data),
   });
 
   const userItems = useMemo(
@@ -238,16 +371,18 @@ export function useListingBrowse(
     if (mode === "house") {
       const pages = houseInfinite.data?.pages;
       if (!pages?.length) return [];
-      return pages.flatMap((p) =>
+      const flat = pages.flatMap((p) =>
         (p.houses ?? []).map((h) => normalizeHouse(h as Record<string, unknown>))
       ) as IHouse[];
+      return sortListingsLatestFirst(flat);
     }
     if (mode === "car") {
       const pages = carBrowseInfinite.data?.pages;
       if (!pages?.length) return [];
-      return pages.flatMap((p) =>
+      const flat = pages.flatMap((p) =>
         (p.cars ?? []).map((c) => normalizeCar(c as Record<string, unknown>))
       ) as ICar[];
+      return sortListingsLatestFirst(flat);
     }
     return [];
   }, [
@@ -278,8 +413,22 @@ export function useListingBrowse(
 
   useEffect(() => {
     setFullItems(browseFlat);
-    setItems(browseFlat as (IHouse | ICar)[]);
-  }, [browseFlat]);
+    setItems(
+      itemsForBrowseState(
+        browseFlat as (IHouse | ICar)[],
+        activeFilters,
+        sortOrder,
+        mode,
+        filterOptions
+      )
+    );
+  }, [
+    browseFlat,
+    activeFilters,
+    sortOrder,
+    mode,
+    filterOptions,
+  ]);
 
   const loading =
     !isLoaded ||
@@ -324,7 +473,7 @@ export function useListingBrowse(
     (value: string) => {
       setSortOrder(value);
       if (value === "Default") {
-        setItems([...fullItems]);
+        setItems(sortListingsLatestFirst([...fullItems]));
         return;
       }
       setItems((prev) => applySortOrder(prev, value, mode));
@@ -335,97 +484,15 @@ export function useListingBrowse(
   const handleFilterChange = useCallback(
     (filters: string[]) => {
       setActiveFilters(filters);
-      if (filters.length === 0) {
-        setItems(
-          sortOrder === "Default"
-            ? [...fullItems]
-            : applySortOrder([...fullItems], sortOrder, mode)
-        );
-        return;
-      }
-
-      const grouped = filters.reduce(
-        (acc, filter) => {
-          const option = filterOptions.find((opt) => opt.value === filter);
-          if (option) {
-            if (!acc[option.category]) acc[option.category] = [];
-            acc[option.category].push(filter);
-          }
-          return acc;
-        },
-        {} as Record<string, string[]>
+      setItems(
+        itemsForBrowseState(
+          fullItems,
+          filters,
+          sortOrder,
+          mode,
+          filterOptions
+        )
       );
-
-      if (mode === "house") {
-        const filtered = (fullItems as IHouse[]).filter((house) => {
-          return Object.entries(grouped).every(([category, values]) => {
-            if (values.length === 0) return true;
-            return values.some((value) => {
-              switch (category) {
-                case "houseType":
-                  return house.houseType === value;
-                case "bedroom":
-                  if (value === "4+") return house.bedroom >= 4;
-                  return house.bedroom === parseInt(value, 10);
-                case "bathroom":
-                  if (value === "3+") return house.bathroom >= 3;
-                  return house.bathroom === parseInt(value, 10);
-                case "size": {
-                  const [minSize, maxSize] = value.split("-").map(Number);
-                  return (
-                    house.size >= minSize &&
-                    (maxSize ? house.size <= maxSize : true)
-                  );
-                }
-                case "price": {
-                  const [minPrice, maxPrice] = value.split("-").map(Number);
-                  return (
-                    house.price >= minPrice &&
-                    (maxPrice ? house.price <= maxPrice : true)
-                  );
-                }
-                case "essentials":
-                  return house.essentials?.includes(value);
-                default:
-                  return false;
-              }
-            });
-          });
-        });
-        setItems(
-          sortOrder === "Default"
-            ? filtered
-            : applySortOrder(filtered, sortOrder, mode)
-        );
-      } else {
-        const filtered = (fullItems as ICar[]).filter((car) => {
-          return Object.entries(grouped).every(([category, values]) => {
-            if (values.length === 0) return true;
-            return values.some((value) => {
-              switch (category) {
-                case "advertisementType":
-                  return (
-                    car.advertisementType ===
-                    (value === "For Rent" ? "Rent" : "Sale")
-                  );
-                case "bodyType":
-                  return car.bodyType === value;
-                case "fuel":
-                  return car.fuel === value;
-                case "transmission":
-                  return car.transmission === value;
-                default:
-                  return false;
-              }
-            });
-          });
-        });
-        setItems(
-          sortOrder === "Default"
-            ? filtered
-            : applySortOrder(filtered, sortOrder, mode)
-        );
-      }
     },
     [fullItems, filterOptions, mode, sortOrder]
   );
