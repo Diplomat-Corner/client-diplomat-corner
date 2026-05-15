@@ -23,8 +23,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <head>
-        {/* Google tag (gtag.js) */}
+      <body className={inter.className}>
         <Script
           src="https://www.googletagmanager.com/gtag/js?id=G-ST2RQHCTC2"
           strategy="afterInteractive"
@@ -37,8 +36,6 @@ export default function RootLayout({
             gtag('config', 'G-ST2RQHCTC2');
           `}
         </Script>
-      </head>
-      <body className={inter.className}>
         <Suspense fallback={<LoadingComponent />}>
           <ClerkProvider
             publishableKey={process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}

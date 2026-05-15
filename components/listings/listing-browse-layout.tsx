@@ -12,11 +12,9 @@ import {
   ChevronDown,
   Filter,
   House,
-  Loader2,
   SlidersHorizontal,
   Check,
 } from "lucide-react";
-import { useEffect, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import ListingPageSkeleton from "@/components/listings/listing-page-skeleton";
 import type { ListingBrowseContext } from "@/components/listings/useListingBrowse";
@@ -50,39 +48,14 @@ export default function ListingBrowseLayout({
     handleSortChange,
     handleFilterChange,
     handleSearchResultSelect,
-    loadMore,
     bannerTitle,
     listingsHeading,
-    showLoadMore,
     countLabel,
-    isLoadingMore,
-    currentPage,
   } = ctx;
-
-  const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    if (activeTab !== "listings" || !showLoadMore) return;
-    const node = loadMoreSentinelRef.current;
-    if (!node) return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const entry = entries[0];
-        if (entry?.isIntersecting && !isLoadingMore) {
-          loadMore();
-        }
-      },
-      { root: null, rootMargin: "400px", threshold: 0 }
-    );
-
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, [activeTab, showLoadMore, isLoadingMore, loadMore, items.length]);
 
   const bannerType: "house" | "car" = mode === "house" ? "house" : "car";
 
-  if (loading && currentPage === 1) {
+  if (loading) {
     return <ListingPageSkeleton variant={mode} />;
   }
 
@@ -315,24 +288,6 @@ export default function ListingBrowseLayout({
                           />
                         ))}
                   </div>
-
-                  {activeTab === "listings" && (showLoadMore || isLoadingMore) && (
-                    <div className="mt-8 flex min-h-[52px] flex-col items-center justify-center gap-3">
-                      {isLoadingMore && (
-                        <div className="flex items-center gap-2 text-sm text-gray-600">
-                          <Loader2 className="h-5 w-5 animate-spin text-[#5B8F2D]" />
-                          Loading more…
-                        </div>
-                      )}
-                      {showLoadMore && (
-                        <div
-                          ref={loadMoreSentinelRef}
-                          className="h-4 w-full max-w-md"
-                          aria-hidden
-                        />
-                      )}
-                    </div>
-                  )}
                 </>
               )}
             </div>

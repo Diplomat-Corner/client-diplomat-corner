@@ -6,10 +6,10 @@ export const queryKeys = {
     mine: (userId: string | undefined, advertisementType?: string) =>
       ["cars", "mine", userId ?? "", advertisementType ?? ""] as const,
     browse: (
-      mode: "page" | "infinite",
+      mode: "page" | "infinite" | "full",
       params: {
-        page?: number;
         excludeUserId?: string;
+        page?: number;
         advertisementType?: string;
         includeSeller?: boolean;
         limit?: number;
@@ -21,10 +21,10 @@ export const queryKeys = {
     mine: (userId: string | undefined, advertisementType?: string) =>
       ["houses", "mine", userId ?? "", advertisementType ?? ""] as const,
     browse: (
-      mode: "page" | "infinite",
+      mode: "page" | "infinite" | "full",
       params: {
-        page?: number;
         excludeUserId?: string;
+        page?: number;
         advertisementType?: string;
         includeSeller?: boolean;
       }

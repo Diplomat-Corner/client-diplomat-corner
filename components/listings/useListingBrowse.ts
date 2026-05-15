@@ -7,16 +7,12 @@ import { HOUSE_FILTER_OPTIONS } from "@/lib/listings/house-filters";
 import type { FilterOption } from "@/components/filter-section";
 import { useAuth, useUser } from "@clerk/nextjs";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  useInfiniteQuery,
-  useQuery,
-} from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/query-keys";
 import type { SellerPreview } from "@/lib/seller-preview";
+import { sortListingsByCreatedAtFirst } from "@/lib/listings/listing-created-order";
 
 export type ListingBrowseMode = "house" | "car";
-
-const ITEMS_PER_PAGE = 20;
 
 const SORT_OPTIONS_HOUSE = [
   { value: "Default", label: "Latest first" },
@@ -63,33 +59,6 @@ function normalizeCar(
   } as ICar & { seller?: SellerPreview };
 }
 
-function listingRecencyMs(item: IHouse | ICar): number {
-  const r = item as unknown as Record<string, unknown>;
-  const tryParse = (v: unknown): number => {
-    if (v == null) return 0;
-    if (typeof v === "string" && v.trim() !== "") {
-      const t = Date.parse(v);
-      return Number.isNaN(t) ? 0 : t;
-    }
-    if (v instanceof Date) return v.getTime();
-    if (typeof v === "number" && Number.isFinite(v)) return v;
-    return 0;
-  };
-  const created = tryParse(r.createdAt);
-  const updated = tryParse(r.updatedAt);
-  const stamp = tryParse(r.timestamp);
-  const idHex = typeof r._id === "string" ? r._id : "";
-  let idTime = 0;
-  if (idHex.length === 24 && /^[0-9a-fA-F]+$/.test(idHex)) {
-    idTime = parseInt(idHex.slice(0, 8), 16) * 1000;
-  }
-  return Math.max(created, updated, stamp, idTime);
-}
-
-function sortListingsLatestFirst(list: (IHouse | ICar)[]): (IHouse | ICar)[] {
-  return [...list].sort((a, b) => listingRecencyMs(b) - listingRecencyMs(a));
-}
-
 function applySortOrder(
   list: (IHouse | ICar)[],
   order: string,
@@ -112,7 +81,7 @@ function applySortOrder(
         h.sort((a, b) => b.size - a.size);
         break;
       default:
-        return sortListingsLatestFirst(list);
+        return sortListingsByCreatedAtFirst(list);
     }
     return h;
   }
@@ -131,7 +100,7 @@ function applySortOrder(
       c.sort((a, b) => b.mileage - a.mileage);
       break;
     default:
-      return sortListingsLatestFirst(list);
+      return sortListingsByCreatedAtFirst(list);
   }
   return c;
 }
@@ -219,13 +188,13 @@ function filterListingsByGroups(
 }
 
 function itemsForBrowseState(
-  browseFlat: (IHouse | ICar)[],
+  browseList: (IHouse | ICar)[],
   activeFilters: string[],
   sortOrder: string,
   mode: ListingBrowseMode,
   filterOptions: FilterOption[]
 ): (IHouse | ICar)[] {
-  const base = sortListingsLatestFirst(browseFlat);
+  const base = [...browseList];
   if (activeFilters.length === 0) {
     return sortOrder === "Default"
       ? base
@@ -238,16 +207,10 @@ function itemsForBrowseState(
     : applySortOrder(filtered, sortOrder, mode);
 }
 
-type PagePayload = {
+type ListingsResponse = {
   success: boolean;
   cars?: Record<string, unknown>[];
   houses?: Record<string, unknown>[];
-  pagination?: {
-    total: number;
-    page: number;
-    limit: number;
-    hasMore: boolean;
-  };
   error?: string;
 };
 
@@ -281,6 +244,61 @@ export function useListingBrowse(
   const sortOptions =
     mode === "house" ? SORT_OPTIONS_HOUSE : SORT_OPTIONS_CAR;
 
+  const browseParams = useMemo(
+    () => ({
+      excludeUserId: userId ?? "",
+      advertisementType: advertisementType ?? "",
+      includeSeller: true as const,
+    }),
+    [userId, advertisementType]
+  );
+
+  const houseBrowseQuery = useQuery({
+    queryKey: queryKeys.houses.browse("full", browseParams),
+    queryFn: async (): Promise<IHouse[]> => {
+      const q = new URLSearchParams({
+        unlimited: "1",
+        excludeUserId: userId || "",
+        includeSeller: "1",
+      });
+      if (advertisementType) q.set("advertisementType", advertisementType);
+      const res = await fetch(`/api/house?${q.toString()}`);
+      const data = (await res.json()) as ListingsResponse;
+      if (!data.success || !Array.isArray(data.houses)) {
+        throw new Error(data.error || "Failed to fetch houses");
+      }
+      const normalized = (data.houses ?? []).map((h) =>
+        normalizeHouse(h as Record<string, unknown>)
+      );
+      return sortListingsByCreatedAtFirst(normalized);
+    },
+    enabled: isLoaded && mode === "house",
+    staleTime: 60_000,
+  });
+
+  const carBrowseQuery = useQuery({
+    queryKey: queryKeys.cars.browse("full", browseParams),
+    queryFn: async (): Promise<ICar[]> => {
+      const q = new URLSearchParams({
+        unlimited: "1",
+        excludeUserId: userId || "",
+        includeSeller: "1",
+      });
+      if (advertisementType) q.set("advertisementType", advertisementType);
+      const res = await fetch(`/api/cars?${q.toString()}`);
+      const data = (await res.json()) as ListingsResponse;
+      if (!data.success || !Array.isArray(data.cars)) {
+        throw new Error(data.error || "Failed to fetch cars");
+      }
+      const normalized = (data.cars ?? []).map((c) =>
+        normalizeCar(c as Record<string, unknown>)
+      );
+      return sortListingsByCreatedAtFirst(normalized);
+    },
+    enabled: isLoaded && mode === "car" && Boolean(advertisementType),
+    staleTime: 60_000,
+  });
+
   const mineQuery = useQuery({
     queryKey:
       mode === "house"
@@ -304,7 +322,7 @@ export function useListingBrowse(
     },
     enabled: isLoaded && !!userId,
     staleTime: 60_000,
-    select: (data) => sortListingsLatestFirst(data),
+    select: (data) => sortListingsByCreatedAtFirst(data),
   });
 
   const userItems = useMemo(
@@ -312,89 +330,19 @@ export function useListingBrowse(
     [mineQuery.data]
   );
 
-  const houseInfinite = useInfiniteQuery({
-    queryKey: queryKeys.houses.browse("infinite", {
-      excludeUserId: userId ?? "",
-      advertisementType: advertisementType ?? "",
-      includeSeller: true,
-    }),
-    queryFn: async ({ pageParam }): Promise<PagePayload> => {
-      const page = pageParam as number;
-      const url = `/api/house?page=${page}&limit=${ITEMS_PER_PAGE}&excludeUserId=${
-        userId || ""
-      }${
-        advertisementType ? `&advertisementType=${advertisementType}` : ""
-      }&includeSeller=1`;
-      const res = await fetch(url);
-      const data = (await res.json()) as PagePayload;
-      if (!data.success) {
-        throw new Error(data.error || "Failed to fetch houses");
-      }
-      return data;
-    },
-    initialPageParam: 1,
-    getNextPageParam: (last) =>
-      last.pagination?.hasMore ? last.pagination.page + 1 : undefined,
-    enabled: isLoaded && mode === "house",
-    staleTime: 60_000,
-  });
-
-  const carBrowseInfinite = useInfiniteQuery({
-    queryKey: queryKeys.cars.browse("infinite", {
-      excludeUserId: userId ?? "",
-      advertisementType: advertisementType ?? "",
-      includeSeller: true,
-      limit: ITEMS_PER_PAGE,
-    }),
-    queryFn: async ({ pageParam }): Promise<PagePayload> => {
-      const page = pageParam as number;
-      const url = `/api/cars?page=${page}&limit=${ITEMS_PER_PAGE}&excludeUserId=${
-        userId || ""
-      }${
-        advertisementType ? `&advertisementType=${advertisementType}` : ""
-      }&includeSeller=1`;
-      const res = await fetch(url);
-      const data = (await res.json()) as PagePayload;
-      if (!data.success) {
-        throw new Error(data.error || "Failed to fetch cars");
-      }
-      return data;
-    },
-    initialPageParam: 1,
-    getNextPageParam: (last) =>
-      last.pagination?.hasMore ? last.pagination.page + 1 : undefined,
-    enabled: isLoaded && mode === "car" && !!advertisementType,
-    staleTime: 60_000,
-  });
-
   const browseFlat = useMemo(() => {
     if (mode === "house") {
-      const pages = houseInfinite.data?.pages;
-      if (!pages?.length) return [];
-      const flat = pages.flatMap((p) =>
-        (p.houses ?? []).map((h) => normalizeHouse(h as Record<string, unknown>))
-      ) as IHouse[];
-      return sortListingsLatestFirst(flat);
+      return (houseBrowseQuery.data ?? []) as (IHouse | ICar)[];
     }
     if (mode === "car") {
-      const pages = carBrowseInfinite.data?.pages;
-      if (!pages?.length) return [];
-      const flat = pages.flatMap((p) =>
-        (p.cars ?? []).map((c) => normalizeCar(c as Record<string, unknown>))
-      ) as ICar[];
-      return sortListingsLatestFirst(flat);
+      return (carBrowseQuery.data ?? []) as (IHouse | ICar)[];
     }
     return [];
-  }, [
-    mode,
-    advertisementType,
-    houseInfinite.data?.pages,
-    carBrowseInfinite.data?.pages,
-  ]);
+  }, [mode, houseBrowseQuery.data, carBrowseQuery.data]);
 
   useEffect(() => {
     const err =
-      mode === "house" ? houseInfinite.error : carBrowseInfinite.error;
+      mode === "house" ? houseBrowseQuery.error : carBrowseQuery.error;
     if (err) {
       setError(
         mode === "house"
@@ -404,52 +352,26 @@ export function useListingBrowse(
     } else {
       setError(null);
     }
-  }, [
-    mode,
-    advertisementType,
-    houseInfinite.error,
-    carBrowseInfinite.error,
-  ]);
+  }, [mode, advertisementType, houseBrowseQuery.error, carBrowseQuery.error]);
 
   useEffect(() => {
     setFullItems(browseFlat);
     setItems(
       itemsForBrowseState(
-        browseFlat as (IHouse | ICar)[],
+        browseFlat,
         activeFilters,
         sortOrder,
         mode,
         filterOptions
       )
     );
-  }, [
-    browseFlat,
-    activeFilters,
-    sortOrder,
-    mode,
-    filterOptions,
-  ]);
+  }, [browseFlat, activeFilters, sortOrder, mode, filterOptions]);
 
   const loading =
     !isLoaded ||
     (mode === "house"
-      ? houseInfinite.isPending
-      : carBrowseInfinite.isPending);
-
-  const isLoadingMore =
-    mode === "house"
-      ? houseInfinite.isFetchingNextPage
-      : carBrowseInfinite.isFetchingNextPage;
-
-  const hasMore =
-    mode === "house"
-      ? houseInfinite.hasNextPage ?? false
-      : carBrowseInfinite.hasNextPage ?? false;
-
-  const currentPage =
-    mode === "house"
-      ? houseInfinite.data?.pages?.length ?? 1
-      : carBrowseInfinite.data?.pages?.length ?? 1;
+      ? houseBrowseQuery.isPending
+      : carBrowseQuery.isPending);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -473,12 +395,20 @@ export function useListingBrowse(
     (value: string) => {
       setSortOrder(value);
       if (value === "Default") {
-        setItems(sortListingsLatestFirst([...fullItems]));
+        setItems(
+          itemsForBrowseState(
+            fullItems,
+            activeFilters,
+            "Default",
+            mode,
+            filterOptions
+          )
+        );
         return;
       }
       setItems((prev) => applySortOrder(prev, value, mode));
     },
-    [fullItems, mode]
+    [fullItems, mode, activeFilters, filterOptions]
   );
 
   const handleFilterChange = useCallback(
@@ -509,21 +439,6 @@ export function useListingBrowse(
     [mode]
   );
 
-  const loadMore = useCallback(() => {
-    if (isLoadingMore || !hasMore) return;
-    if (mode === "house") {
-      void houseInfinite.fetchNextPage();
-    } else {
-      void carBrowseInfinite.fetchNextPage();
-    }
-  }, [
-    mode,
-    isLoadingMore,
-    hasMore,
-    houseInfinite.fetchNextPage,
-    carBrowseInfinite.fetchNextPage,
-  ]);
-
   const bannerTitle =
     mode === "house"
       ? advertisementType === "Sale"
@@ -541,8 +456,6 @@ export function useListingBrowse(
           ? "Cars for Sale"
           : "Listings"
       : "Listings";
-
-  const showLoadMore = hasMore;
 
   const countLabel =
     mode === "house"
@@ -578,13 +491,9 @@ export function useListingBrowse(
     handleSortChange,
     handleFilterChange,
     handleSearchResultSelect,
-    loadMore,
     bannerTitle,
     listingsHeading,
-    showLoadMore,
     countLabel,
-    isLoadingMore,
-    currentPage,
   };
 }
 
