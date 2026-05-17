@@ -11,11 +11,11 @@ export interface INotification {
   userId: string;
   title: string;
   message: string;
-  type: NotificationType;
-  category: NotificationCategory;
+  type: string;
+  category: string;
   link?: string;
   isRead: boolean;
-  createdAt: Date;
-  updatedAt: Date;
+  createdAt: string | Date;
+  updatedAt: string | Date;
   uniqueId?: string;
 }

@@ -23,13 +23,11 @@ import {
 } from "lucide-react";
 import {
   INotification,
-  NotificationType,
-  NotificationCategory,
 } from "@/types/notifications";
 import { useTabActive } from "@/hooks/use-tab-active";
 
 interface FormattedMessageProps {
-  message: string;
+  message: unknown;
 }
 
 // Helper function to convert base64 to Uint8Array for Web Push
@@ -47,15 +45,22 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
 }
 
 const FormattedMessage: React.FC<FormattedMessageProps> = ({ message }) => {
+  const text =
+    typeof message === "string"
+      ? message
+      : message == null
+        ? ""
+        : String(message);
+
   // Return null if message is empty or only whitespace
-  if (!message || !message.trim()) {
+  if (!text.trim()) {
     return null;
   }
 
-  const lines = message.split("\n");
+  const lines = text.split("\n");
 
   // Check if this is an inquiry message
-  const isInquiry = message.includes("has sent you an inquiry");
+  const isInquiry = text.includes("has sent you an inquiry");
 
   if (isInquiry) {
     // Extract key information
@@ -264,6 +269,63 @@ const FormattedMessage: React.FC<FormattedMessageProps> = ({ message }) => {
   );
 };
 
+function normalizeMongoId(raw: unknown): string {
+  if (typeof raw === "string") return raw;
+  if (
+    raw &&
+    typeof raw === "object" &&
+    "$oid" in raw &&
+    typeof (raw as { $oid: string }).$oid === "string"
+  ) {
+    return (raw as { $oid: string }).$oid;
+  }
+  return raw == null ? "" : String(raw);
+}
+
+function normalizeNotificationRow(raw: unknown, index: number): INotification {
+  const row =
+    raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  const str = (v: unknown, fallback = "") =>
+    typeof v === "string" ? v : v != null ? String(v) : fallback;
+  const createdAtRaw = row.createdAt;
+  const updatedAtRaw = row.updatedAt;
+  const toDate = (v: unknown): Date => {
+    if (v instanceof Date) return v;
+    if (typeof v === "string" || typeof v === "number") {
+      const d = new Date(v);
+      return Number.isFinite(d.getTime()) ? d : new Date();
+    }
+    return new Date();
+  };
+  return {
+    _id: normalizeMongoId(row._id) || `unknown-${index}`,
+    userId: str(row.userId),
+    title: str(row.title, "Notification"),
+    message: str(row.message),
+    type: str(row.type, "info"),
+    category: str(row.category, "system"),
+    link: row.link != null && str(row.link) !== "" ? str(row.link) : undefined,
+    isRead: Boolean(row.isRead),
+    createdAt: toDate(createdAtRaw),
+    updatedAt: toDate(updatedAtRaw),
+    uniqueId: row.uniqueId != null ? str(row.uniqueId) : undefined,
+  };
+}
+
+function parseNotificationsPayload(data: unknown): INotification[] {
+  if (data == null) return [];
+  if (Array.isArray(data)) {
+    return data.map((raw, index) => normalizeNotificationRow(raw, index));
+  }
+  if (typeof data === "object" && data !== null && "notifications" in data) {
+    const inner = (data as { notifications: unknown }).notifications;
+    if (Array.isArray(inner)) {
+      return inner.map((raw, index) => normalizeNotificationRow(raw, index));
+    }
+  }
+  return [];
+}
+
 export default function Notifications() {
   const { user, isLoaded } = useUser();
   const isTabActive = useTabActive();
@@ -278,13 +340,15 @@ export default function Notifications() {
   const subscribeToPushNotifications = useCallback(async () => {
     if (!isLoaded || !user) return;
 
+    const vapid = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY?.trim();
+    if (!vapid) return;
+    if (!("serviceWorker" in navigator)) return;
+
     try {
       const registration = await navigator.serviceWorker.ready;
       const subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(
-          process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || ""
-        ),
+        applicationServerKey: urlBase64ToUint8Array(vapid),
       });
 
       // Store the subscription on the server
@@ -319,11 +383,13 @@ export default function Notifications() {
   } = useQuery({
     queryKey: queryKeys.notifications(user?.id),
     queryFn: async () => {
-      const response = await fetch(`/api/notifications?userId=${user!.id}`);
+      const uid = encodeURIComponent(user!.id);
+      const response = await fetch(`/api/notifications?userId=${uid}`);
       if (!response.ok) {
         throw new Error(`Failed to fetch notifications: ${response.status}`);
       }
-      return response.json() as Promise<INotification[]>;
+      const data: unknown = await response.json();
+      return parseNotificationsPayload(data);
     },
     enabled: isLoaded && !!user,
     staleTime: 30_000,
@@ -474,16 +540,6 @@ export default function Notifications() {
 
   const deleteNotification = (notification: INotification) => {
     deleteMutation.mutate(notification);
-  };
-
-  // Toggle expanded notification
-  const toggleExpanded = (id: string) => {
-    if (expandedNotification === id) {
-      setExpandedNotification(null);
-    } else {
-      setExpandedNotification(id);
-      markAsRead(notifications.find((n) => n._id === id) as INotification);
-    }
   };
 
   // Get icon for notification type
