@@ -1,5 +1,5 @@
 "use client";
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/query-keys";
 import {
@@ -20,6 +20,11 @@ import type {
 
 export default function ManageAds() {
   const queryClient = useQueryClient();
+  const adImageInputRef = useRef<HTMLInputElement>(null);
+  const [adImageUploadError, setAdImageUploadError] = useState<string | null>(
+    null
+  );
+  const [isUploadingAdImage, setIsUploadingAdImage] = useState(false);
   const [priority, setPriority] = useState("Important");
   const [visibility, setVisibility] = useState(true);
   const [time, setTime] = useState("Current");
@@ -55,6 +60,43 @@ export default function ManageAds() {
     link: "https://example.com",
     imageUrl: "",
   });
+
+  const handleAdImageFileChange = async (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setAdImageUploadError(null);
+    setIsUploadingAdImage(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch("/api/advertisements/upload", {
+        method: "POST",
+        body: fd,
+      });
+      const data: { error?: string; imageUrl?: string; url?: string; publicUrl?: string } =
+        await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Upload failed");
+      }
+      const url =
+        (typeof data.imageUrl === "string" && data.imageUrl) ||
+        (typeof data.url === "string" && data.url) ||
+        (typeof data.publicUrl === "string" && data.publicUrl);
+      if (!url) {
+        throw new Error("No image URL returned");
+      }
+      setFormData((prev) => ({ ...prev, imageUrl: url }));
+    } catch (err) {
+      setAdImageUploadError(
+        err instanceof Error ? err.message : "Upload failed"
+      );
+    } finally {
+      setIsUploadingAdImage(false);
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -234,7 +276,8 @@ export default function ManageAds() {
               </div>
               <div className="col-span-2">
                 <label className="block text-sm font-semibold text-primary">
-                  Image URL (optional — placeholder used if empty)
+                  Image URL (optional — upload below or paste a link; placeholder
+                  if empty)
                 </label>
                 <input
                   className="border-b-2 border-primary w-full p-2 focus:outline-none bg-secondary"
@@ -297,12 +340,34 @@ export default function ManageAds() {
 
           <div className="border-2 border-primary p-4 rounded-3xl w-full">
             <div>
-              <div className="h-40 w-full flex flex-col items-center justify-center border-dashed border-2 border-primary rounded-lg">
+              <input
+                ref={adImageInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleAdImageFileChange}
+              />
+              <button
+                type="button"
+                disabled={isUploadingAdImage}
+                onClick={() => adImageInputRef.current?.click()}
+                className="h-40 w-full flex flex-col items-center justify-center border-dashed border-2 border-primary rounded-lg bg-secondary/30 hover:bg-secondary/50 disabled:opacity-60 transition-colors cursor-pointer"
+              >
                 <ImagePlus size={40} className="text-primary" />
                 <p className="mt-4 text-sm text-primary">
-                  Upload media for the campaign
+                  {isUploadingAdImage
+                    ? "Uploading…"
+                    : "Click to upload campaign image"}
                 </p>
-              </div>
+              </button>
+              {adImageUploadError && (
+                <p className="mt-2 text-sm text-red-600">{adImageUploadError}</p>
+              )}
+              {formData.imageUrl.trim() !== "" && (
+                <p className="mt-2 text-xs text-primary break-all">
+                  Current image: {formData.imageUrl.trim()}
+                </p>
+              )}
             </div>
 
             <div className="mt-4 flex gap-4">
