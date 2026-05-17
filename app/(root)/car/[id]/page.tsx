@@ -278,7 +278,7 @@ export default function CarDetails() {
           {/* 4. Reviews - Visible only on desktop here, fourth on mobile (see below) */}
           <div className="hidden lg:block">
             <ReviewsSection
-              productId={id}
+              productId={car._id || id}
               productType="car"
               sellerId={car.userId}
             />
@@ -564,7 +564,7 @@ export default function CarDetails() {
 
         {/* 4. Reviews - Fourth on mobile */}
         <ReviewsSection
-          productId={id}
+          productId={car._id || id}
           productType="car"
           sellerId={car.userId}
         />

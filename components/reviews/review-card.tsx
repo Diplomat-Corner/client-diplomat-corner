@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, Fragment, useEffect, useRef } from "react";
+import { useState, Fragment, useEffect, useRef, useMemo } from "react";
 import { useMutation } from "@tanstack/react-query";
 import {
   Star,
@@ -51,9 +51,13 @@ export default function ReviewCard({
   isDeleting = false,
   isLiking = false,
 }: ReviewCardProps) {
+  const likesList = useMemo(
+    () => (Array.isArray(review.likes) ? review.likes : []),
+    [review.likes]
+  );
   const [showOptions, setShowOptions] = useState(false);
   const [liked, setLiked] = useState(
-    currentUserId ? review.likes.includes(currentUserId) : false
+    currentUserId ? likesList.includes(currentUserId) : false
   );
   const [showReportModal, setShowReportModal] = useState(false);
   const [reportType, setReportType] = useState<ReportType | null>(null);
@@ -61,6 +65,10 @@ export default function ReviewCard({
   const [reportSuccess, setReportSuccess] = useState(false);
   const [reportError, setReportError] = useState("");
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    setLiked(currentUserId ? likesList.includes(currentUserId) : false);
+  }, [currentUserId, likesList]);
 
   useEffect(() => {
     return () => {
@@ -71,8 +79,8 @@ export default function ReviewCard({
   }, []);
 
   const likesCount =
-    review.likes.length +
-    (liked && !review.likes.includes(currentUserId || "") ? 1 : 0);
+    likesList.length +
+    (liked && !likesList.includes(currentUserId || "") ? 1 : 0);
 
   const handleLike = () => {
     if (!liked && currentUserId && !isLiking) {

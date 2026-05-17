@@ -25,10 +25,45 @@ interface Review {
   likes: string[];
 }
 
+/** Loose row from GET /api/reviews */
+interface ReviewApiRow {
+  _id?: unknown;
+  userId?: string;
+  userName?: string;
+  user?: { firstName?: string; lastName?: string };
+  userImage?: string;
+  targetUserId?: string;
+  rating?: unknown;
+  comment?: unknown;
+  createdAt?: string | Date;
+  updatedAt?: string | Date;
+  productId?: string;
+  likes?: unknown;
+}
+
 interface ReviewsSectionProps {
   productId: string;
   productType: "car" | "house";
   sellerId?: string;
+}
+
+function normalizeMongoId(raw: unknown): string {
+  if (typeof raw === "string") return raw;
+  if (
+    raw &&
+    typeof raw === "object" &&
+    "$oid" in raw &&
+    typeof (raw as { $oid: string }).$oid === "string"
+  ) {
+    return (raw as { $oid: string }).$oid;
+  }
+  return raw == null ? "" : String(raw);
+}
+
+function normalizeLikes(raw: unknown): string[] {
+  if (raw == null) return [];
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((x): x is string => typeof x === "string");
 }
 
 export default function ReviewsSection({
@@ -48,17 +83,67 @@ export default function ReviewsSection({
     isError,
   } = useQuery({
     queryKey: queryKeys.reviews(productId, productType),
+    enabled: Boolean(productId?.trim()),
     queryFn: async () => {
-      const response = await fetch(`/api/reviews?productId=${productId}`);
+      const q = encodeURIComponent(productId);
+      const response = await fetch(`/api/reviews?productId=${q}`);
       if (!response.ok) {
         throw new Error("Failed to fetch reviews");
       }
       const data = await response.json();
-      return data.map((review: Review) => ({
-        ...review,
-        userName: review.userName || "Anonymous User",
-        createdAt: new Date(review.createdAt),
-      })) as Review[];
+      const list: ReviewApiRow[] = Array.isArray(data)
+        ? data
+        : data &&
+            typeof data === "object" &&
+            Array.isArray((data as { reviews?: unknown }).reviews)
+          ? ((data as { reviews: ReviewApiRow[] }).reviews ?? [])
+          : [];
+      return list.map((review): Review => {
+        const u = review.user;
+        const fromUser =
+          u && `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim();
+        const userName =
+          (typeof review.userName === "string" && review.userName.trim()) ||
+          fromUser ||
+          "Anonymous User";
+        const n = Number(review.rating);
+        const rating = Number.isFinite(n) ? n : 0;
+        const createdRaw = review.createdAt;
+        const createdAt =
+          createdRaw instanceof Date
+            ? createdRaw
+            : new Date(
+                typeof createdRaw === "string" || typeof createdRaw === "number"
+                  ? createdRaw
+                  : ""
+              );
+        const updatedRaw = review.updatedAt;
+        const updatedAtParsed =
+          updatedRaw instanceof Date
+            ? updatedRaw
+            : new Date(
+                typeof updatedRaw === "string" ? updatedRaw : ""
+              );
+        const updatedAt = Number.isFinite(updatedAtParsed.getTime())
+          ? updatedAtParsed
+          : createdAt;
+        return {
+          ...review,
+          _id: normalizeMongoId(review._id),
+          userId: typeof review.userId === "string" ? review.userId : "",
+          targetUserId:
+            typeof review.targetUserId === "string" ? review.targetUserId : "",
+          productId: typeof review.productId === "string" ? review.productId : "",
+          likes: normalizeLikes(review.likes),
+          userName,
+          rating,
+          comment: typeof review.comment === "string" ? review.comment : "",
+          createdAt: Number.isFinite(createdAt.getTime())
+            ? createdAt
+            : new Date(),
+          updatedAt,
+        } as Review;
+      });
     },
   });
 
@@ -66,8 +151,10 @@ export default function ReviewsSection({
 
   const averageRating = useMemo(() => {
     if (reviews.length === 0) return 0;
-    const total = reviews.reduce((sum, r) => sum + r.rating, 0);
-    return Number.parseFloat((total / reviews.length).toFixed(1));
+    const rated = reviews.filter((r) => Number.isFinite(r.rating) && r.rating > 0);
+    if (rated.length === 0) return 0;
+    const total = rated.reduce((sum, r) => sum + r.rating, 0);
+    return Number.parseFloat((total / rated.length).toFixed(1));
   }, [reviews]);
 
   const hasUserReviewed = useMemo(() => {
