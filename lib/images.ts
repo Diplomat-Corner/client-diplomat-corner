@@ -66,6 +66,14 @@ export const images = {
     src: "/assets/images/new_car.jpg",
     alt: "new house 2",
   },
+  diplomat_house: {
+    src: "/assets/images/diplomat-house.jpg",
+    alt: "House listed on Diplomat Corner",
+  },
+  diplomat_car: {
+    src: "/assets/images/diplomat-car.jpg",
+    alt: "Car listed on Diplomat Corner",
+  },
   vial_logo: {
     src: "/assets/images/vital_logo.png",
     alt: "vial logo",

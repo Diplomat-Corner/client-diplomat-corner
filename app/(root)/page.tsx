@@ -77,45 +77,26 @@ type CarouselSlide = {
 
 const DEFAULT_CAROUSEL_SLIDES: CarouselSlide[] = [
   {
-    key: "v1",
-    image: images.vial_logo.src,
-    alt: images.vial_logo.alt,
-    badge: "Featured Ad",
-    title: "Vital Security",
-    description: "Discover premium security solutions for your needs.",
-    link: "https://www.vitalsecureplc.com",
-    linkText: "Learn More",
-  },
-  {
-    key: "v2",
-    image: images.vital_1.src,
-    alt: images.vital_1.alt,
-    badge: "Sponsored",
-    title: "Vital Security",
+    key: "diplomat-house",
+    image: images.diplomat_house.src,
+    alt: images.diplomat_house.alt,
+    badge: "Diplomat Corner",
+    title: "Houses for diplomats",
     description:
-      "Comprehensive security service for diplomatic community",
-    link: "https://www.vitalsecureplc.com",
-    linkText: "Explore Services",
+      "Rent or buy a home in Addis, listed for the diplomatic community.",
+    link: "/house-for-rent",
+    linkText: "Browse houses",
   },
   {
-    key: "v3",
-    image: images.vital_2.src,
-    alt: images.vital_2.alt,
-    badge: "Sponsored",
-    title: "Vital Security",
-    description: "Excellence in international standards.",
-    link: "https://www.vitalsecureplc.com",
-    linkText: "Visit Website",
-  },
-  {
-    key: "v4",
-    image: images.vital_3.src,
-    alt: images.vital_3.alt,
-    badge: "Sponsored",
-    title: "Vital Security",
-    description: "Innovative vital security solutions for modern needs.",
-    link: "https://www.vitalsecureplc.com",
-    linkText: "Contact Us",
+    key: "diplomat-car",
+    image: images.diplomat_car.src,
+    alt: images.diplomat_car.alt,
+    badge: "Diplomat Corner",
+    title: "Duty-free cars",
+    description:
+      "Browse cars for sale and rent from diplomats on Diplomat Corner.",
+    link: "/car-for-sale",
+    linkText: "Browse cars",
   },
 ];
 
@@ -255,7 +236,12 @@ const AdvertisementCarousel = ({
         ) : (
           <Link
             href={currentAd.link}
-            target="_blank"
+            target={currentAd.link.startsWith("http") ? "_blank" : undefined}
+            rel={
+              currentAd.link.startsWith("http")
+                ? "noopener noreferrer"
+                : undefined
+            }
             className="inline-flex items-center gap-2 bg-white/90 backdrop-blur-sm text-primary px-3 py-1.5 sm:px-4 sm:py-2 rounded-full shadow-md hover:bg-white transition-colors duration-300 text-sm"
           >
             {currentAd.linkText}
