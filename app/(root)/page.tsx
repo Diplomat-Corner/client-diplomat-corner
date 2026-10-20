@@ -73,30 +73,21 @@ type CarouselSlide = {
   description: string;
   link: string;
   linkText: string;
+  /** Finished creative. Shown as-is, without the text overlay. */
+  artwork?: boolean;
 };
 
 const DEFAULT_CAROUSEL_SLIDES: CarouselSlide[] = [
   {
-    key: "diplomat-house",
-    image: images.diplomat_house.src,
-    alt: images.diplomat_house.alt,
-    badge: "Diplomat Corner",
-    title: "Houses for diplomats",
-    description:
-      "Rent or buy a home in Addis, listed for the diplomatic community.",
-    link: "/house-for-rent",
-    linkText: "Browse houses",
-  },
-  {
-    key: "diplomat-car",
-    image: images.diplomat_car.src,
-    alt: images.diplomat_car.alt,
-    badge: "Diplomat Corner",
-    title: "Duty-free cars",
-    description:
-      "Browse cars for sale and rent from diplomats on Diplomat Corner.",
-    link: "/car-for-sale",
-    linkText: "Browse cars",
+    key: "kedame-gebeya",
+    image: images.kedame_gebeya.src,
+    alt: images.kedame_gebeya.alt,
+    badge: "Sponsored",
+    title: "Kedame Gebeya",
+    description: "Your everyday supplies, sorted.",
+    link: "https://wa.me/251970696969",
+    linkText: "Message us on WhatsApp",
+    artwork: true,
   },
 ];
 
@@ -167,6 +158,8 @@ const AdvertisementCarousel = ({
   const trackableId = useDb ? carouselAd?._id : undefined;
   const imageRemote =
     typeof currentAd.image === "string" && currentAd.image.startsWith("http");
+  const isArtwork = !!currentAd.artwork;
+  const showControls = advertisements.length > 1;
 
   const handleCtaClick = async (e: React.MouseEvent<HTMLAnchorElement>) => {
     if (!trackableId) return;
@@ -182,16 +175,32 @@ const AdvertisementCarousel = ({
       onMouseLeave={() => setIsHovering(false)}
     >
       <Image
-        width={800}
-        height={420}
+        width={isArtwork ? 1024 : 800}
+        height={isArtwork ? 340 : 420}
         src={currentAd.image || "/placeholder.svg"}
         alt={currentAd.alt}
-        className="w-full h-[320px] sm:h-[420px] object-cover transition-transform duration-500 group-hover:scale-105"
+        className={
+          isArtwork
+            ? "w-full h-auto"
+            : "w-full h-[320px] sm:h-[420px] object-cover transition-transform duration-500 group-hover:scale-105"
+        }
         priority
         unoptimized={imageRemote}
       />
+      {isArtwork ? (
+        <Link
+          href={currentAd.link}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label={currentAd.linkText}
+          className="absolute inset-0"
+        />
+      ) : null}
+      {!isArtwork ? (
       <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent"></div>
+      ) : null}
 
+      {showControls ? (
       <button
         type="button"
         onClick={prevAd}
@@ -200,6 +209,8 @@ const AdvertisementCarousel = ({
       >
         <ChevronLeft className="w-4 h-4" />
       </button>
+      ) : null}
+      {showControls ? (
       <button
         type="button"
         onClick={nextAd}
@@ -208,7 +219,9 @@ const AdvertisementCarousel = ({
       >
         <ChevronRight className="w-4 h-4" />
       </button>
+      ) : null}
 
+      {!isArtwork ? (
       <div className="absolute bottom-0 left-0 p-4 sm:p-6 w-full">
         <span className="bg-primary/90 text-white text-xs px-3 py-1 rounded-full backdrop-blur-sm">
           {currentAd.badge}
@@ -252,7 +265,9 @@ const AdvertisementCarousel = ({
           </Link>
         )}
       </div>
+      ) : null}
 
+      {showControls ? (
       <div className="absolute bottom-4 right-4 flex gap-1">
         {advertisements.map((slide, index) => (
           <button
@@ -268,6 +283,7 @@ const AdvertisementCarousel = ({
           />
         ))}
       </div>
+      ) : null}
     </div>
   );
 };
