@@ -8,7 +8,6 @@ import Link from "next/link";
 import { images, products, getProduct } from "@/lib/assets";
 import {
   ChevronDown,
-  Plus,
   Star,
   ChevronRight,
   ChevronLeft,
@@ -77,19 +76,28 @@ type CarouselSlide = {
   artwork?: boolean;
 };
 
-const DEFAULT_CAROUSEL_SLIDES: CarouselSlide[] = [
-  {
-    key: "kedame-gebeya",
-    image: images.kedame_gebeya.src,
-    alt: images.kedame_gebeya.alt,
-    badge: "Sponsored",
-    title: "Kedame Gebeya",
-    description: "Your everyday supplies, sorted.",
-    link: "https://wa.me/251970696969",
-    linkText: "Message us on WhatsApp",
-    artwork: true,
-  },
-];
+const NUCLEUS_LINK =
+  "https://nucleusinternationalschoolsystem.com/?utm_source=diplomatcorner&utm_medium=banner&utm_campaign=diplomat_corner_banner_website&utm_content=banner_v1";
+
+const DEFAULT_CAROUSEL_SLIDES: CarouselSlide[] = (
+  [
+    ["nucleus-campus", images.nucleus_campus],
+    ["nucleus-sports", images.nucleus_sports],
+    ["nucleus-stem", images.nucleus_stem],
+  ] as const
+).map(([key, img]) => ({
+  key,
+  image: img.src,
+  alt: img.alt,
+  badge: "Sponsored",
+  title: "Nucleus International Schools",
+  description: "Learning Goes Beyond Books!",
+  link: NUCLEUS_LINK,
+  linkText: "Visit Nucleus International Schools",
+  artwork: true,
+}));
+
+const KEDAME_GEBEYA_LINK = "https://wa.me/251970696969";
 
 const AdvertisementCarousel = ({
   isTabActive,
@@ -149,7 +157,7 @@ const AdvertisementCarousel = ({
 
     const interval = setInterval(() => {
       nextAd();
-    }, 5000);
+    }, 2000);
 
     return () => clearInterval(interval);
   }, [isTabActive, isHovering, advertisements.length]);
@@ -174,19 +182,33 @@ const AdvertisementCarousel = ({
       onMouseEnter={() => setIsHovering(true)}
       onMouseLeave={() => setIsHovering(false)}
     >
-      <Image
-        width={isArtwork ? 1024 : 800}
-        height={isArtwork ? 340 : 420}
-        src={currentAd.image || "/placeholder.svg"}
-        alt={currentAd.alt}
-        className={
-          isArtwork
-            ? "w-full h-auto"
-            : "w-full h-[320px] sm:h-[420px] object-cover transition-transform duration-500 group-hover:scale-105"
-        }
-        priority
-        unoptimized={imageRemote}
-      />
+      {isArtwork ? (
+        <div className="relative w-full aspect-[5860/2172] bg-[#dfe7f5]">
+          {advertisements.map((slide, index) => (
+            <Image
+              key={slide.key}
+              src={slide.image}
+              alt={slide.alt}
+              fill
+              sizes="(min-width: 1024px) 58vw, 100vw"
+              className={`object-cover transition-opacity duration-700 ${
+                index === currentAdIndex ? "opacity-100" : "opacity-0"
+              }`}
+              priority={index === 0}
+            />
+          ))}
+        </div>
+      ) : (
+        <Image
+          width={800}
+          height={420}
+          src={currentAd.image || "/placeholder.svg"}
+          alt={currentAd.alt}
+          className="w-full h-[320px] sm:h-[420px] object-cover transition-transform duration-500 group-hover:scale-105"
+          priority
+          unoptimized={imageRemote}
+        />
+      )}
       {isArtwork ? (
         <Link
           href={currentAd.link}
@@ -302,18 +324,6 @@ const HeroSection = ({
   const n1 = normals[1];
   useAdvertisementView(n0?._id);
   useAdvertisementView(n1?._id);
-  // Move state and effect outside of the render function
-  const [showCar, setShowCar] = useState(true);
-
-  useEffect(() => {
-    if (!isTabActive) return;
-
-    const interval = setInterval(() => {
-      setShowCar((prev) => !prev);
-    }, 5000);
-
-    return () => clearInterval(interval);
-  }, [isTabActive]);
 
   return (
     <section className="pt-2 sm:pt-3 md:pt-4">
@@ -422,102 +432,25 @@ const HeroSection = ({
             </div>
           </div>
 
-          {/* Right Column - Shop Now Feature */}
+          {/* Right Column - Kedame Gebeya */}
           <div className="lg:col-span-5 mt-4 lg:mt-0">
-            <div className="relative h-[420px] sm:h-[500px] lg:h-full overflow-hidden rounded-xl sm:rounded-2xl shadow-sm group">
-              {/* Alternating content - fixed implementation */}
-              <div
-                className={`transition-opacity duration-500 absolute inset-0 ${
-                  showCar ? "opacity-100" : "opacity-0"
-                }`}
-              >
-                <Image
-                  width={600}
-                  height={650}
-                  src={images.new_car.src || "/placeholder.svg"}
-                  alt={images.new_car.alt}
-                  className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
-                />
-              </div>
-              <div
-                className={`transition-opacity duration-500 absolute inset-0 ${
-                  showCar ? "opacity-0" : "opacity-100"
-                }`}
-              >
-                <Image
-                  width={600}
-                  height={650}
-                  src={images.new_house.src || "/placeholder.svg"}
-                  alt="Luxury House"
-                  className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
-                />
-              </div>
-
-              <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/30 to-transparent"></div>
-
-              <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-10">
-                <motion.div
-                  whileHover={{ scale: 1.1 }}
-                  whileTap={{ scale: 0.95 }}
-                  className="relative"
-                >
-                  <div className="absolute inset-0 bg-primary/20 rounded-full blur-xl"></div>
-                  <Link
-                    href={showCar ? "/car-for-sale" : "/house-for-rent"}
-                    className="text-white hover:text-primary group-hover:text-primary relative flex items-center justify-center w-16 h-16 sm:w-20 sm:h-20 bg-transparent backdrop-blur-sm rounded-full shadow-lg border-2 border-white/80 group-hover:bg-white hover:bg-primary transition-colors duration-300"
-                  >
-                    <div className="text-center">
-                      <ShoppingBag className="w-5 h-5 sm:w-6 sm:h-6 mx-auto" />
-                      <span className="text-[10px] sm:text-xs font-medium mt-1">
-                        Browse
-                      </span>
-                    </div>
-                  </Link>
-                </motion.div>
-              </div>
-
-              {/* Alternating text content - fixed implementation */}
-              <div className="absolute bottom-0 left-0 p-4 sm:p-6 w-full flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-3 justify-between">
-                <div>
-                  <span className="bg-primary/90 text-white text-xs px-2 sm:px-3 py-1 rounded-full backdrop-blur-sm">
-                    New Arrival
-                  </span>
-                  <h3 className="text-white text-lg sm:text-xl font-bold mt-1 sm:mt-2">
-                    {showCar ? "Premium Vehicles" : "Luxury Properties"}
-                  </h3>
-                  <p className="text-white/90 text-xs sm:text-sm">
-                    {showCar
-                      ? "Explore our collection of luxury cars"
-                      : "Discover exclusive houses"}
-                  </p>
-                </div>
-
-                <div className="flex gap-2 mt-2 sm:mt-0">
-                  <Link
-                    href={showCar ? "/car-for-sale" : "/house-for-rent"}
-                    className="inline-flex items-center gap-1 bg-white/90 backdrop-blur-sm text-primary px-2 py-1 sm:px-3 sm:py-1.5 rounded-full text-xs sm:text-sm shadow-md hover:bg-white transition-colors duration-300"
-                  >
-                    Learn More
-                    <ChevronDown
-                      size={14}
-                      className="text-white w-3 h-3 sm:w-3.5 sm:h-3.5 rounded-full bg-primary"
-                    />
-                  </Link>
-                  <Link
-                    href={
-                      showCar ? "manage-product/car" : "manage-product/house"
-                    }
-                    className="inline-flex items-center gap-1 bg-primary/80 backdrop-blur-sm text-white px-2 py-1 sm:px-3 sm:py-1.5 rounded-full text-xs sm:text-sm shadow-md hover:bg-primary transition-colors duration-300"
-                  >
-                    Add {showCar ? "Car" : "Property"}
-                    <Plus
-                      size={14}
-                      className="text-primary w-3 h-3 sm:w-3.5 sm:h-3.5 rounded-full bg-white"
-                    />
-                  </Link>
-                </div>
-              </div>
-            </div>
+            <Link
+              href={KEDAME_GEBEYA_LINK}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="Kedame Gebeya: message us on WhatsApp"
+              className="flex h-full items-center overflow-hidden rounded-xl sm:rounded-2xl bg-[#fdfcfa] shadow-sm group"
+            >
+              <Image
+                width={1024}
+                height={340}
+                src={images.kedame_gebeya.src}
+                alt={images.kedame_gebeya.alt}
+                sizes="(min-width: 1024px) 42vw, 100vw"
+                className="w-full h-auto transition-transform duration-500 group-hover:scale-[1.02]"
+                priority
+              />
+            </Link>
           </div>
         </div>
       </MaxWidthWrapper>

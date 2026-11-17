@@ -70,6 +70,18 @@ export const images = {
     src: "/assets/images/kedame-gebeya.jpg",
     alt: "Kedame Gebeya delivery van and household supplies offer",
   },
+  nucleus_campus: {
+    src: "/assets/images/nucleus-01.jpg",
+    alt: "Nucleus International Schools: Learning Goes Beyond Books! Cambridge Pathway campus",
+  },
+  nucleus_sports: {
+    src: "/assets/images/nucleus-02.jpg",
+    alt: "Nucleus International Schools: Soccer, Basketball and Taekwondo Clubs",
+  },
+  nucleus_stem: {
+    src: "/assets/images/nucleus-03.jpg",
+    alt: "Nucleus International Schools: STEM and Robotics Lab, IT, AI and Coding Lab",
+  },
   vial_logo: {
     src: "/assets/images/vital_logo.png",
     alt: "vial logo",
